@@ -25,13 +25,14 @@ USAGE
   monitorctl set VCP VALUE [-d DISPLAY]   write any VCP code  (e.g. set 0x10 50 = brightness 50)
   monitorctl export-shortcuts [DIR] [--host HOST]
                                           create iPhone .shortcut files for the remote server
-  monitorctl method [ddc+signal|ddc|signal]
-                                          show / set how on and off work (default ddc+signal)
+  monitorctl info [-d DISPLAY] [--refresh] show brand, capabilities and the chosen methods
+  monitorctl method [auto|ddc+signal|ddc|signal]
+                                          show / set how on and off work (default auto)
   monitorctl config                       show settings (incl. remote token)
 
 OPTIONS
   -d, --display DISPLAY   number from `list`, part of the name, or the id (default: all)
-  -m, --method ddc+signal|ddc|signal
+  -m, --method auto|ddc+signal|ddc|signal
                           override the power method for this command
 """
 
@@ -62,11 +63,17 @@ func number(_ text: String) -> UInt16? {
 let display = takeOption(["-d", "--display"])
 let methodOption = takeOption(["-m", "--method"])
 let hostOption = takeOption(["--host"])
+let refreshFlag: Bool = {
+    guard let i = args.firstIndex(of: "--refresh") else { return false }
+    args.remove(at: i)
+    return true
+}()
 
 var config = ConfigStore.load()
 func parseMethod(_ text: String) -> PowerMethod? {
     switch text.lowercased() {
-    case "ddc+signal", "both", "default": return .ddcAndSignalOff
+    case "auto", "automatic", "default": return .automatic
+    case "ddc+signal", "both": return .ddcAndSignalOff
     case "ddc": return .ddc
     case "signal", "sleep", "displaysleep": return .displaySleep
     default: return nil
@@ -75,7 +82,7 @@ func parseMethod(_ text: String) -> PowerMethod? {
 
 if let m = methodOption {
     guard let parsed = parseMethod(m) else {
-        FileHandle.standardError.write(Data("Unknown method \u{201C}\(m)\u{201D}. Use ddc+signal, ddc or signal.\n".utf8))
+        FileHandle.standardError.write(Data("Unknown method \u{201C}\(m)\u{201D}. Use auto, ddc+signal, ddc or signal.\n".utf8))
         exit(2)
     }
     config.method = parsed
@@ -154,9 +161,27 @@ do {
         try controller.writeVCP(UInt8(vcp), value: value, displayID: display)
         print("OK")
 
+    case "info":
+        let list = try controller.resolve(display)
+        for d in list {
+            let p = controller.profile(for: d, refresh: refreshFlag)
+            let caps = p.capabilities
+            func yesNo(_ b: Bool?) -> String { b.map { $0 ? "yes" : "no" } ?? "unknown" }
+            print("\(d.index). \(d.name)")
+            print("   Brand:          \(p.brand) (\(d.manufacturerID ?? "?")), product \(d.productID.map(String.init) ?? "?")")
+            print("   Model string:   \(caps?.model ?? "unknown")")
+            print("   DDC power 0xD6: \(yesNo(p.supportsDDCPower))")
+            let inputs = caps?.inputs.map(InputSource.describe).joined(separator: ", ")
+            print("   Inputs listed:  \(inputs.flatMap { $0.isEmpty ? nil : $0 } ?? (caps?.supports(0x60) == true ? "any" : "none listed"))")
+            print("   Input command:  \(p.inputStyle == .standard ? "standard (VCP 0x60)" : "LG alternate (VCP 0xF4)")")
+            print("   Automatic uses: \(p.automaticPowerMethod.label), because it \(p.reason)")
+            print("   Current method: \(config.method.label)")
+            if let caps { print("   Capabilities:   \(caps.raw)") }
+        }
+
     case "method":
         if args.count >= 2 {
-            guard let parsed = parseMethod(args[1]) else { fail("usage: monitorctl method ddc+signal|ddc|signal") }
+            guard let parsed = parseMethod(args[1]) else { fail("usage: monitorctl method auto|ddc+signal|ddc|signal") }
             var saved = ConfigStore.load()
             saved.method = parsed
             ConfigStore.save(saved)

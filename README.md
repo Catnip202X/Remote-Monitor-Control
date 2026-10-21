@@ -52,6 +52,36 @@ Before the first run, turn on **DDC/CI** in your monitor's on-screen menu. It's 
 
 > **Mac mini port note:** the HDMI port on the **M1** Mac mini doesn't pass DDC. If nothing responds, connect the monitor with **USB-C/Thunderbolt** (a USB-C→DisplayPort or USB-C→HDMI cable works). On M2 and later, the HDMI port works.
 
+## Siri
+
+Say any of these to Siri on your Mac, iPhone or Apple Watch:
+
+| Say | What happens |
+|---|---|
+| "Turn off my monitor" | Turns the monitor off |
+| "Turn on my monitor" | Turns it back on |
+| "Switch inputs for my monitor" | Flips between Input A and Input B |
+| "Remote Monitor Control On/Off" | Toggles power |
+
+The first three are shortcuts named exactly as you say them, because Siri runs a shortcut when you say its name. Import **Turn Off My Monitor**, **Turn On My Monitor** and **Switch Inputs for My Monitor** from the `Shortcuts/` folder once, and iCloud syncs them to your iPhone and Watch. They reach the Mac over your Wi-Fi.
+
+The app also has built-in Siri phrases that work with no import. Apple requires those to contain the app's name, for example "*Turn off my monitor with Remote Monitor Control*".
+
+## Monitor brands
+
+The app works out how to control each monitor by itself. It reads the manufacturer from the monitor's EDID and asks the monitor for its DDC/CI capabilities, the list of commands it supports. With the default power method, **Automatic**, it then picks:
+
+| Monitor | Power off | Input switching |
+|---|---|---|
+| Supports DDC power (0xD6), most Dell, LG, ASUS, BenQ, HP, Lenovo | DDC power-off only; the video signal stays on | Standard VCP 0x60 |
+| Doesn't list DDC power | Turns off the Mac's video signal, then sends DDC power-off | Standard VCP 0x60 |
+| Samsung | Turns off the Mac's video signal, then sends DDC power-off, because Samsung monitors wake again while they still receive video | Standard VCP 0x60 |
+| LG models that don't list VCP 0x60 | As above | LG's alternate command (VCP 0xF4 with LG's input codes) |
+
+Run `monitorctl info` to see what was detected and why. The capabilities are read once and cached; `monitorctl info --refresh` reads them again. To force a method for every monitor, pick it in the menu or run `monitorctl method ddc`, `ddc+signal` or `signal`.
+
+Only the Samsung Odyssey G5 has been tested on real hardware. The other rules follow the DDC/CI standard and the brands' known quirks. To add or correct a brand, edit the table in `Sources/Core/MonitorProfile.swift` and open a pull request with your monitor's `monitorctl info` output.
+
 ## The two buttons
 
 | Shortcut | What one press does |
@@ -78,7 +108,7 @@ Other Mac options:
 
 The app runs a small server on your home network at port **58888**. A secret token protects it.
 
-**Easy way:** after `./build.sh`, the `Shortcuts/` folder holds three signed shortcuts: **Remote Monitor Control On/Off**, **Remote Monitor Control Input Switching** and **Monitor Status**. Double-click them on the Mac to import them. Shortcuts names each one after its file, and a file name can't contain "/", so rename **Remote Monitor Control On:Off** to **On/Off** after importing. They sync to your iPhone and Watch through iCloud, or you can AirDrop them. You can also re-export them from the menu-bar app with **Export iPhone Shortcuts…**.
+**Easy way:** after `./build.sh`, the `Shortcuts/` folder holds six signed shortcuts: **Remote Monitor Control On/Off**, **Remote Monitor Control Input Switching**, **Monitor Status**, and the three Siri shortcuts **Turn Off My Monitor**, **Turn On My Monitor** and **Switch Inputs for My Monitor**. Double-click them on the Mac to import them. Shortcuts names each one after its file, and a file name can't contain "/", so rename **Remote Monitor Control On:Off** to **On/Off** after importing. They sync to your iPhone and Watch through iCloud, or you can AirDrop them. You can also re-export them from the menu-bar app with **Export iPhone Shortcuts…**.
 
 **Manual way:** in Shortcuts on the iPhone, add a **Get Contents of URL** action with
 `http://<your-mac>.local:58888/toggle?token=<token>`.
@@ -105,14 +135,15 @@ monitorctl input                 # shows the current input (raw code)
 monitorctl input hdmi2           # hdmi1 hdmi2 dp1 dp2 usbc dvi vga or 0x11
 monitorctl get 0x10              # read any VCP code (0x10 = brightness)
 monitorctl set 0x10 70
-monitorctl method ddc+signal     # how on/off work: ddc+signal (default), ddc, signal
+monitorctl info                  # brand, capabilities and the method Automatic picked
+monitorctl method auto           # how on/off work: auto (default), ddc+signal, ddc, signal
 monitorctl export-shortcuts ~/Desktop
 monitorctl config
 ```
 
 ## Troubleshooting
 
-- **The monitor blinks but doesn't turn off:** many monitors, including the Samsung Odyssey G5, accept the DDC standby command and then wake straight back up because the Mac is still sending video. The default method, **DDC/CI + turn off video signal**, first stops the Mac's video output, then sends the DDC power-off command, so the monitor stays off. Only the displays turn off; the Mac keeps running. Change it with `monitorctl method ddc+signal|ddc|signal` or the *Method* picker in the menu.
+- **The monitor blinks but doesn't turn off:** many monitors, including the Samsung Odyssey G5, accept the DDC standby command and then wake straight back up because the Mac is still sending video. The **Automatic** method detects this: for these monitors it first stops the Mac's video output, then sends the DDC power-off command, so the monitor stays off. Only the displays turn off; the Mac keeps running. Change it with `monitorctl method auto|ddc+signal|ddc|signal` or the *Method* picker in the menu.
 - **"Off" works but "On" doesn't:** set *Off mode* to **Standby (0x04)**, which is the default. Under *Power off (0x05)*, many monitors shut down their DDC chip and can't be woken remotely. If the monitor still won't wake, switch *Method* to **Turn off video signal only**. That works with any monitor.
 - **Input switching uses odd codes:** some brands, LG in particular, don't use the standard numbers. Put the monitor on each input by hand and run `monitorctl input` to see its code. Then use that number, for example `monitorctl input 0x90` or **Custom code** in Shortcuts.
 - **Switching back from another computer:** after the monitor changes input, the Mac usually still has a DDC link and can switch it back. Some monitors drop DDC from inactive inputs; for those, switch back from the monitor's buttons.
@@ -123,7 +154,7 @@ monitorctl config
 ## Project layout
 
 ```
-Sources/Core/   DDC/CI over IOAVService, display discovery, power + input logic, config, shortcut exporter
+Sources/Core/   DDC/CI over IOAVService, display discovery, brand profiles, power + input logic, config, shortcut exporter
 Sources/App/    SwiftUI menu-bar app, App Intents (Shortcuts/Siri), LAN HTTP server
 Sources/CLI/    monitorctl
 project.yml     XcodeGen spec (build.sh generates the .xcodeproj)

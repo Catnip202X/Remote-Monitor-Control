@@ -248,6 +248,8 @@ struct GetMonitorInputIntent: AppIntent {
 // MARK: - Ready-made App Shortcuts (appear in Shortcuts & Siri with zero setup)
 
 struct MonitorAppShortcuts: AppShortcutsProvider {
+    // Apple requires every built-in Siri phrase to contain the app's name. For phrases
+    // without it ("turn off my monitor"), the exported shortcuts are named that way.
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: ToggleMonitorIntent(),
@@ -260,8 +262,27 @@ struct MonitorAppShortcuts: AppShortcutsProvider {
             shortTitle: "Remote Monitor Control On/Off",
             systemImageName: "power")
         AppShortcut(
+            intent: TurnMonitorOffIntent(),
+            phrases: [
+                "Turn off my monitor with \(.applicationName)",
+                "Turn my monitor off with \(.applicationName)",
+                "\(.applicationName) off",
+            ],
+            shortTitle: "Turn Off My Monitor",
+            systemImageName: "display")
+        AppShortcut(
+            intent: TurnMonitorOnIntent(),
+            phrases: [
+                "Turn on my monitor with \(.applicationName)",
+                "Turn my monitor on with \(.applicationName)",
+                "\(.applicationName) on",
+            ],
+            shortTitle: "Turn On My Monitor",
+            systemImageName: "display")
+        AppShortcut(
             intent: ToggleMonitorInputIntent(),
             phrases: [
+                "Switch inputs for my monitor with \(.applicationName)",
                 "Switch monitor input with \(.applicationName)",
                 "Toggle my monitor input with \(.applicationName)",
                 "\(.applicationName) input",

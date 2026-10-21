@@ -19,12 +19,17 @@ public final class ExternalDisplay: Identifiable, Hashable, CustomStringConverti
     public let id: String
     public let name: String
     public let index: Int
+    /// Three-letter EDID manufacturer ID, e.g. "SAM" (Samsung), "GSM" (LG), "DEL" (Dell).
+    public let manufacturerID: String?
+    public let productID: Int?
     let service: IOAVService
 
-    init(id: String, name: String, index: Int, service: IOAVService) {
+    init(id: String, name: String, index: Int, manufacturerID: String?, productID: Int?, service: IOAVService) {
         self.id = id
         self.name = name
         self.index = index
+        self.manufacturerID = manufacturerID
+        self.productID = productID
         self.service = service
     }
 
@@ -50,6 +55,8 @@ public enum DisplayDiscovery {
 
         var pendingName: String?
         var pendingKey: String?
+        var pendingManufacturer: String?
+        var pendingProductID: Int?
         var usedIDs = Set<String>()
 
         func process(_ entry: io_registry_entry_t) {
@@ -58,6 +65,8 @@ public enum DisplayDiscovery {
                 let attrs = property(entry, "DisplayAttributes") as? [String: Any]
                 let product = attrs?["ProductAttributes"] as? [String: Any]
                 pendingName = product?["ProductName"] as? String
+                pendingManufacturer = product?["ManufacturerID"] as? String
+                pendingProductID = product?["ProductID"] as? Int
                 var key = property(entry, "EDID UUID") as? String ?? ""
                 if let serial = product?["AlphanumericSerialNumber"] as? String, !serial.isEmpty {
                     key += "-" + serial
@@ -66,7 +75,7 @@ public enum DisplayDiscovery {
                 }
                 pendingKey = key.isEmpty ? nil : key
             } else if name == "DCPAVServiceProxy" {
-                defer { pendingName = nil; pendingKey = nil }
+                defer { pendingName = nil; pendingKey = nil; pendingManufacturer = nil; pendingProductID = nil }
                 guard (property(entry, "Location") as? String) == "External" else { return }
                 guard let service = IOAVServiceCreateWithService(kCFAllocatorDefault, entry) else { return }
                 let index = result.count + 1
@@ -74,7 +83,9 @@ public enum DisplayDiscovery {
                 if usedIDs.contains(id) { id += "#\(index)" }
                 usedIDs.insert(id)
                 let displayName = (pendingName?.isEmpty == false ? pendingName! : "External Display \(index)")
-                result.append(ExternalDisplay(id: id, name: displayName, index: index, service: service))
+                result.append(ExternalDisplay(id: id, name: displayName, index: index,
+                                              manufacturerID: pendingManufacturer, productID: pendingProductID,
+                                              service: service))
             }
         }
 
@@ -109,16 +120,18 @@ public enum DDC {
     }
 
     /// Set VCP feature. Returns true if the I2C write was acknowledged.
-    public static func write(_ service: IOAVService, vcp: UInt8, value: UInt16) -> Bool {
+    /// `source` is the host's I2C source address: 0x51 per the standard, 0x50 for LG's
+    /// alternate input command.
+    public static func write(_ service: IOAVService, vcp: UInt8, value: UInt16, source: UInt8 = 0x51) -> Bool {
         var packet: [UInt8] = [0x84, 0x03, vcp, UInt8(value >> 8), UInt8(value & 0xFF), 0]
-        packet[5] = checksum(0x6E ^ 0x51, packet[0..<5])
+        packet[5] = checksum(0x6E ^ source, packet[0..<5])
 
         for attempt in 0..<4 {
             var success = false
             // Each command is sent twice: many monitors drop the first one after idle.
             for _ in 0..<2 {
                 usleep(10_000)
-                if IOAVServiceWriteI2C(service, chipAddress, dataAddress, &packet, UInt32(packet.count)) == kIOReturnSuccess {
+                if IOAVServiceWriteI2C(service, chipAddress, UInt32(source), &packet, UInt32(packet.count)) == kIOReturnSuccess {
                     success = true
                 }
             }
@@ -164,5 +177,41 @@ public enum DDC {
             usleep(UInt32(30_000 * (attempt + 1)))
         }
         return nil
+    }
+
+    /// Read the monitor's DDC/CI capabilities string (VCP request 0xF3), e.g.
+    /// "(prot(monitor)type(lcd)model(...)vcp(02 04 10 60(11 0F) ...))".
+    /// Returns nil if the monitor doesn't answer.
+    public static func capabilities(_ service: IOAVService) -> String? {
+        var bytes: [UInt8] = []
+        var offset: UInt16 = 0
+        while offset < 4096 {
+            var packet: [UInt8] = [0x83, 0xF3, UInt8(offset >> 8), UInt8(offset & 0xFF), 0]
+            packet[4] = checksum(0x6E ^ 0x51, packet[0..<4])
+            var chunk: [UInt8]?
+            for attempt in 0..<5 {
+                usleep(10_000)
+                guard IOAVServiceWriteI2C(service, chipAddress, dataAddress, &packet, UInt32(packet.count)) == kIOReturnSuccess else {
+                    usleep(UInt32(20_000 * (attempt + 1)))
+                    continue
+                }
+                usleep(60_000)
+                var reply = [UInt8](repeating: 0, count: 38)
+                if IOAVServiceReadI2C(service, chipAddress, dataAddress, &reply, UInt32(reply.count)) == kIOReturnSuccess,
+                   reply[2] == 0xE3,
+                   (UInt16(reply[3]) << 8 | UInt16(reply[4])) == offset {
+                    let length = max(0, Int(reply[1] & 0x7F) - 3)
+                    chunk = Array(reply[5..<(5 + min(length, 32))])
+                    break
+                }
+            }
+            guard let chunk else { break }
+            if chunk.isEmpty { break }   // an empty fragment ends the string
+            bytes += chunk
+            offset += UInt16(chunk.count)
+        }
+        let text = String(decoding: bytes.filter { $0 != 0 }, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.contains("vcp(") || text.contains("VCP(") ? text : nil
     }
 }

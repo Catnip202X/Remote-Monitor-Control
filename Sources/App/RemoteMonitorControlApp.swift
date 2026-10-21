@@ -146,6 +146,12 @@ struct MenuContent: View {
                             Text("\(status.stateText) · \(status.source)")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                            if let detail = status.detail {
+                                Text(detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                         Spacer()
                         Menu("Input") {

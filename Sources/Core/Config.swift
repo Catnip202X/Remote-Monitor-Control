@@ -9,6 +9,8 @@
 import Foundation
 
 public enum PowerMethod: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Pick per monitor from its brand and the capabilities it reports (see MonitorProfile).
+    case automatic
     /// Send VCP 0xD6 over DDC/CI *and* turn off the Mac's video signal. Many monitors
     /// (Samsung Odyssey, for one) accept the DDC standby command but wake straight back
     /// up while the Mac is still sending video; stopping the signal keeps them off.
@@ -21,8 +23,13 @@ public enum PowerMethod: String, Codable, CaseIterable, Identifiable, Sendable {
     case displaySleep
 
     public var id: String { rawValue }
+
+    /// Whether "off" stops the Mac's video signal.
+    public var cutsSignal: Bool { self == .ddcAndSignalOff || self == .displaySleep }
+
     public var label: String {
         switch self {
+        case .automatic: return "Automatic (per monitor)"
         case .ddcAndSignalOff: return "DDC/CI + turn off video signal"
         case .ddc: return "DDC/CI only"
         case .displaySleep: return "Turn off video signal only"
@@ -31,7 +38,7 @@ public enum PowerMethod: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 public struct AppConfig: Codable, Equatable, Sendable {
-    public var method: PowerMethod = .ddcAndSignalOff
+    public var method: PowerMethod = .automatic
     /// Value written to VCP 0xD6 to turn off: 0x04 (DPM off / standby — most monitors can
     /// be woken again over DDC) or 0x05 (hard power off — often can't be woken remotely).
     public var ddcOffValue: UInt8 = 0x04
@@ -75,6 +82,21 @@ public enum ConfigStore {
     public static var configURL: URL { directory.appendingPathComponent("config.json") }
     static var stateURL: URL { directory.appendingPathComponent("state.json") }
     static var inputStateURL: URL { directory.appendingPathComponent("input-state.json") }
+    static var capabilitiesURL: URL { directory.appendingPathComponent("capabilities.json") }
+
+    /// Cached DDC capabilities strings, keyed by display id.
+    public static func capabilitiesCache() -> [String: String] {
+        guard let data = try? Data(contentsOf: capabilitiesURL),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return dict
+    }
+
+    public static func saveCapabilitiesCache(_ dict: [String: String]) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try? encoder.encode(dict).write(to: capabilitiesURL, options: .atomic)
+    }
 
     public static func load() -> AppConfig {
         if let data = try? Data(contentsOf: configURL),

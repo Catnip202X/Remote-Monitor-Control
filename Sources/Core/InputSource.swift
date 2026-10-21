@@ -83,7 +83,15 @@ extension MonitorController {
         var done: [String] = []
         var failed: [String] = []
         for display in try resolve(displayID) {
-            if DDC.write(display.service, vcp: InputSource.vcp, value: value) {
+            let style = profile(for: display).inputStyle
+            let written: Bool
+            switch style {
+            case .standard:
+                written = DDC.write(display.service, vcp: InputSource.vcp, value: value)
+            case .lgAlternate:
+                written = DDC.write(display.service, vcp: 0xF4, value: InputStyle.lgValue(for: value), source: 0x50)
+            }
+            if written {
                 ConfigStore.setLastKnownInput(value, for: display.id)
                 done.append(display.name)
             } else {
@@ -101,7 +109,9 @@ extension MonitorController {
         locked {
         guard let list = try? resolve(displayID) else { return [] }
         return list.map { display in
-            (display.name, DDC.read(display.service, vcp: InputSource.vcp).map { $0.current & 0xFF })
+            // LG's alternate input can't be read back; the toggle then uses the last input it set.
+            guard profile(for: display).inputStyle == .standard else { return (display.name, nil) }
+            return (display.name, DDC.read(display.service, vcp: InputSource.vcp).map { $0.current & 0xFF })
         }
         }
     }
@@ -135,7 +145,11 @@ extension MonitorController {
         guard !config.inputsAutoDetected else { return }
         guard let current = currentInputs().first?.value, current != 0 else { return }
         config.inputA = current
-        if config.inputB == current {
+        // Prefer another input the monitor actually lists in its capabilities.
+        let listed = displays().first.map { profile(for: $0).capabilities?.inputs ?? [] } ?? []
+        if let other = listed.map({ $0 & 0xFF }).first(where: { $0 != current }) {
+            config.inputB = other
+        } else if config.inputB == current {
             config.inputB = current == InputSource.hdmi1.value ? InputSource.displayPort1.value : InputSource.hdmi1.value
         }
         config.inputsAutoDetected = true

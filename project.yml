@@ -45,8 +45,8 @@ targets:
       properties:
         CFBundleName: Remote Monitor Control
         CFBundleDisplayName: Remote Monitor Control
-        CFBundleShortVersionString: "1.1"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "1.2"
+        CFBundleVersion: "3"
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Dekun Kong"

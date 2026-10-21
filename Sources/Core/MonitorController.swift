@@ -35,8 +35,10 @@ public struct MonitorStatus: Identifiable, Hashable, Sendable {
     public let name: String
     /// nil = unknown
     public let isOn: Bool?
-    /// "monitor" (read over DDC), "last known" or "unknown"
+    /// "monitor" (read over DDC), "video signal", "last known" or "unknown"
     public let source: String
+    /// With the Automatic method: the brand and why its power method was chosen.
+    public var detail: String? = nil
 
     public var stateText: String {
         guard let isOn else { return "unknown" }
@@ -88,87 +90,76 @@ public final class MonitorController {
             // had put the displays to sleep in the meantime.
             if on { Self.declareUserActivity() }
 
-            switch config.method {
-            case .displaySleep:
-                if on {
-                    return "Displays woken"
-                }
+            let list = try targets(displayID)
+            let plan = list.map { ($0, effectiveMethod(for: $0, config: config)) }
+
+            // Off with a signal-based method: stop the video signal first, then send
+            // DDC power-off. Only the displays turn off; the Mac keeps running.
+            if !on, plan.contains(where: { $0.1.cutsSignal }) {
                 try Self.run("/usr/bin/pmset", ["displaysleepnow"])
-                return "Displays put to sleep"
-
-            case .ddcAndSignalOff:
-                // Off: cut the video signal first, then send DDC power-off.
-                // On: declaring user activity (above) restores the signal, then DDC power-on.
-                // Only the displays turn off; the Mac keeps running.
-                let list = try targets(displayID)
-                if !on {
-                    try Self.run("/usr/bin/pmset", ["displaysleepnow"])
-                    usleep(500_000)   // give the signal time to drop before the DDC command
-                }
-                var names: [String] = []
-                for display in list {
-                    let value: UInt16 = on ? 0x01 : UInt16(config.ddcOffValue)
-                    _ = DDC.write(display.service, vcp: DDC.vcpPowerMode, value: value)
-                    ConfigStore.setLastKnownPower(on, for: display.id)
-                    names.append(display.name)
-                }
-                return "\(names.joined(separator: ", ")) turned \(on ? "on" : "off")"
-
-            case .ddc:
-                let list = try targets(displayID)
-                var failed: [String] = []
-                var done: [String] = []
-                for display in list {
-                    let value: UInt16 = on ? 0x01 : UInt16(config.ddcOffValue)
-                    if DDC.write(display.service, vcp: DDC.vcpPowerMode, value: value) {
-                        ConfigStore.setLastKnownPower(on, for: display.id)
-                        done.append(display.name)
-                    } else {
-                        failed.append(display.name)
-                    }
-                }
-                if done.isEmpty { throw MonitorError.ddcFailed(failed) }
-                var message = "\(done.joined(separator: ", ")) turned \(on ? "on" : "off")"
-                if !failed.isEmpty { message += " (no response from \(failed.joined(separator: ", ")))" }
-                return message
+                usleep(500_000)   // give the signal time to drop before the DDC command
             }
+
+            var done: [String] = []
+            var failed: [String] = []
+            for (display, method) in plan {
+                if method == .displaySleep {
+                    done.append(display.name)
+                    continue
+                }
+                let value: UInt16 = on ? 0x01 : UInt16(config.ddcOffValue)
+                let acknowledged = DDC.write(display.service, vcp: DDC.vcpPowerMode, value: value)
+                // With the signal cut, the monitor goes dark even if it ignored the DDC command.
+                if acknowledged || method.cutsSignal {
+                    ConfigStore.setLastKnownPower(on, for: display.id)
+                    done.append(display.name)
+                } else {
+                    failed.append(display.name)
+                }
+            }
+            if done.isEmpty { throw MonitorError.ddcFailed(failed) }
+            var message = "\(done.joined(separator: ", ")) turned \(on ? "on" : "off")"
+            if !failed.isEmpty { message += " (no response from \(failed.joined(separator: ", ")))" }
+            return message
         }
     }
 
     @discardableResult
     public func toggle(displayID: String? = nil, config: AppConfig = ConfigStore.load()) throws -> String {
-        switch config.method {
-        case .displaySleep, .ddcAndSignalOff:
+        let list = (try? resolve(displayID)) ?? []
+        if list.contains(where: { effectiveMethod(for: $0, config: config).cutsSignal }) {
             // Whether the video signal is off is the real on/off state for these methods.
             return try setPower(Self.videoSignalOff(), displayID: displayID, config: config)
-        case .ddc:
-            let states = status(displayID: displayID)
-            // Unknown counts as "on" so the first toggle turns things off.
-            let anyOn = states.isEmpty || states.contains { $0.isOn ?? true }
-            return try setPower(!anyOn, displayID: displayID, config: config)
         }
+        let states = status(displayID: displayID, config: config)
+        // Unknown counts as "on" so the first toggle turns things off.
+        let anyOn = states.isEmpty || states.contains { $0.isOn ?? true }
+        return try setPower(!anyOn, displayID: displayID, config: config)
     }
 
     public func status(displayID: String? = nil, config: AppConfig = ConfigStore.load()) -> [MonitorStatus] {
         locked {
             guard let list = try? targets(displayID) else { return [] }
-            if config.method != .ddc {
-                let on = !Self.videoSignalOff()
-                return list.map { MonitorStatus(id: $0.id, name: $0.name, isOn: on, source: "video signal") }
-            }
             let cache = ConfigStore.lastKnownPower()
             return list.map { display in
+                let profile = config.method == .automatic ? profile(for: display) : nil
+                let method = profile?.automaticPowerMethod ?? config.method
+                let detail = profile.map { "\($0.brand): \($0.reason)" }
+                if method.cutsSignal {
+                    return MonitorStatus(id: display.id, name: display.name, isOn: !Self.videoSignalOff(),
+                                         source: "video signal", detail: detail)
+                }
                 // Valid power-mode values are 0x01…0x05. Some monitors (e.g. Samsung Odyssey)
                 // answer the read with 0, which means "not supported", not "off".
                 if let reply = DDC.read(display.service, vcp: DDC.vcpPowerMode), (0x01...0x05).contains(reply.current) {
                     let on = reply.current == 0x01
                     ConfigStore.setLastKnownPower(on, for: display.id)
-                    return MonitorStatus(id: display.id, name: display.name, isOn: on, source: "monitor")
+                    return MonitorStatus(id: display.id, name: display.name, isOn: on, source: "monitor", detail: detail)
                 }
                 if let cached = cache[display.id] {
-                    return MonitorStatus(id: display.id, name: display.name, isOn: cached, source: "last known")
+                    return MonitorStatus(id: display.id, name: display.name, isOn: cached, source: "last known", detail: detail)
                 }
-                return MonitorStatus(id: display.id, name: display.name, isOn: nil, source: "unknown")
+                return MonitorStatus(id: display.id, name: display.name, isOn: nil, source: "unknown", detail: detail)
             }
         }
     }

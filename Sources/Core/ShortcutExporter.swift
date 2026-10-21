@@ -30,6 +30,11 @@ public enum ShortcutExporter {
         Item(name: "Remote Monitor Control On/Off", path: "toggle", showResult: false, color: 4_282_601_983, glyph: 59_511),
         Item(name: "Remote Monitor Control Input Switching", path: "toggle-input", showResult: false, color: 4_271_458_815, glyph: 59_511),
         Item(name: "Monitor Status", path: "status", showResult: true, color: 2_071_128_575, glyph: 59_511),
+        // Named the way you'd say them: Siri runs a shortcut when you say its exact name,
+        // e.g. "Hey Siri, turn off my monitor".
+        Item(name: "Turn Off My Monitor", path: "off", showResult: false, color: 4_282_601_983, glyph: 59_511),
+        Item(name: "Turn On My Monitor", path: "on", showResult: false, color: 4_282_601_983, glyph: 59_511),
+        Item(name: "Switch Inputs for My Monitor", path: "toggle-input", showResult: false, color: 4_271_458_815, glyph: 59_511),
     ]
 
     /// e.g. "my-mac.local"
