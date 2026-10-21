@@ -36,7 +36,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// be woken again over DDC) or 0x05 (hard power off — often can't be woken remotely).
     public var ddcOffValue: UInt8 = 0x04
     public var serverEnabled: Bool = true
-    public var port: UInt16 = 8765
+    public var port: UInt16 = 58888
     public var token: String = AppConfig.makeToken()
     public var keepMacAwake: Bool = true
     /// The two inputs "Remote Monitor Control Input Switching" flips between (raw VCP 0x60 values).

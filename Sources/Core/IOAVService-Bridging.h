@@ -13,18 +13,18 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 
-typedef CFTypeRef IOAVServiceRef;
+typedef CFTypeRef IOAVService;
 
-extern IOAVServiceRef _Nullable IOAVServiceCreateWithService(CFAllocatorRef _Nullable allocator,
+extern IOAVService _Nullable IOAVServiceCreateWithService(CFAllocatorRef _Nullable allocator,
                                                              io_service_t service) CF_RETURNS_RETAINED;
 
-extern IOReturn IOAVServiceReadI2C(IOAVServiceRef _Nonnull service,
+extern IOReturn IOAVServiceReadI2C(IOAVService _Nonnull service,
                                    uint32_t chipAddress,
                                    uint32_t offset,
                                    void * _Nonnull outputBuffer,
                                    uint32_t outputBufferSize);
 
-extern IOReturn IOAVServiceWriteI2C(IOAVServiceRef _Nonnull service,
+extern IOReturn IOAVServiceWriteI2C(IOAVService _Nonnull service,
                                     uint32_t chipAddress,
                                     uint32_t dataAddress,
                                     void * _Nonnull inputBuffer,

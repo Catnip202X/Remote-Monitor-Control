@@ -97,19 +97,20 @@ public final class MonitorController {
                 return "Displays put to sleep"
 
             case .ddcAndSignalOff:
-                // Off: DDC standby first, then stop the video signal so the monitor stays off.
+                // Off: cut the video signal first, then send DDC power-off.
                 // On: declaring user activity (above) restores the signal, then DDC power-on.
                 // Only the displays turn off; the Mac keeps running.
                 let list = try targets(displayID)
+                if !on {
+                    try Self.run("/usr/bin/pmset", ["displaysleepnow"])
+                    usleep(500_000)   // give the signal time to drop before the DDC command
+                }
                 var names: [String] = []
                 for display in list {
                     let value: UInt16 = on ? 0x01 : UInt16(config.ddcOffValue)
                     _ = DDC.write(display.service, vcp: DDC.vcpPowerMode, value: value)
                     ConfigStore.setLastKnownPower(on, for: display.id)
                     names.append(display.name)
-                }
-                if !on {
-                    try Self.run("/usr/bin/pmset", ["displaysleepnow"])
                 }
                 return "\(names.joined(separator: ", ")) turned \(on ? "on" : "off")"
 

@@ -5,10 +5,10 @@
 //  A tiny HTTP server on the local network so an iPhone/iPad/Watch Shortcut
 //  ("Get Contents of URL") can switch the monitor:
 //
-//     GET http://<mac>.local:8765/off?token=XXXX
-//     GET http://<mac>.local:8765/on?token=XXXX
-//     GET http://<mac>.local:8765/toggle?token=XXXX
-//     GET http://<mac>.local:8765/status?token=XXXX
+//     GET http://<mac>.local:58888/off?token=XXXX
+//     GET http://<mac>.local:58888/on?token=XXXX
+//     GET http://<mac>.local:58888/toggle?token=XXXX
+//     GET http://<mac>.local:58888/status?token=XXXX
 //
 //  Optional `&display=<number|name>` targets one monitor. The token can also be
 //  sent as an `X-Token` header.

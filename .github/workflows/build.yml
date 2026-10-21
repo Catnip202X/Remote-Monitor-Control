@@ -1,0 +1,54 @@
+# Builds Remote Monitor Control on every push and pull request.
+# Pushing a tag like v1.2.0 also publishes a GitHub Release with the zipped app.
+#
+# The iPhone shortcuts are not built here: each one contains your Mac's network
+# name and secret token, and signing them needs an iCloud account. The app
+# writes them on your Mac on first launch (menu: Export iPhone Shortcuts…).
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build the app
+        run: ./build.sh --no-install
+
+      - name: Zip the app
+        id: zip
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == "tag" ]] || VERSION="dev-${GITHUB_SHA::7}"
+          ZIP="Remote-Monitor-Control-${VERSION}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Remote Monitor Control.app" "$ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Remote-Monitor-Control
+          path: ${{ steps.zip.outputs.zip }}
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.zip.outputs.zip }}" \
+            --title "Remote Monitor Control $GITHUB_REF_NAME" \
+            --notes "Download the zip, unzip it and move **Remote Monitor Control.app** to Applications. The app is not notarized, so see the README for how to open it the first time."
