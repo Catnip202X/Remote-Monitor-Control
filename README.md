@@ -28,7 +28,7 @@ It works like the Windows tools (ControlMyMonitor, Twinkle Tray, Monitorian): it
 
 4. In the menu-bar app, choose **Export iPhone Shortcuts…**. The shortcuts are made on your Mac because each one contains your Mac's network name and its secret token.
 
-Every push to `main` is built by GitHub Actions, and pushing a `v*` tag publishes a release.
+Every push to `main` is built by GitHub Actions, and pushing a `v*` tag publishes a release. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Build from source
 

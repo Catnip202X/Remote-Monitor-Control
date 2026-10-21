@@ -49,6 +49,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # This version's section of CHANGELOG.md, without its heading.
+          awk -v v="$VERSION" '
+            /^## \[/ { inside = (index($0, "## [" v "]") == 1); next }
+            /^\[[^]]+\]: / { next }
+            inside' CHANGELOG.md > notes.md
+          if [[ ! -s notes.md ]]; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION"
+          fi
+          {
+            echo
+            echo "---"
+            echo "Download the zip, unzip it and move **Remote Monitor Control.app** to Applications. The app is not notarized, so see the README for how to open it the first time."
+          } >> notes.md
           gh release create "$GITHUB_REF_NAME" "${{ steps.zip.outputs.zip }}" \
             --title "Remote Monitor Control $GITHUB_REF_NAME" \
-            --notes "Download the zip, unzip it and move **Remote Monitor Control.app** to Applications. The app is not notarized, so see the README for how to open it the first time."
+            --notes-file notes.md
