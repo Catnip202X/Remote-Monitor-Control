@@ -50,6 +50,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var inputA: UInt16 = 0x11   // HDMI 1 — replaced by the Mac's actual input on first launch
     public var inputB: UInt16 = 0x0F   // DisplayPort 1
     public var inputsAutoDetected: Bool = false
+    /// "Follow USB switch": the watched USB device as "vendor:product" hex (e.g. "1532:0257"),
+    /// or nil when off. Gone → Input B, back → Input A.
+    public var followUSB: String? = nil
+    public var followUSBName: String? = nil
 
     public init() {}
 
@@ -71,6 +75,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         inputA = (try? c.decode(UInt16.self, forKey: .inputA)) ?? d.inputA
         inputB = (try? c.decode(UInt16.self, forKey: .inputB)) ?? d.inputB
         inputsAutoDetected = (try? c.decode(Bool.self, forKey: .inputsAutoDetected)) ?? d.inputsAutoDetected
+        followUSB = try? c.decodeIfPresent(String.self, forKey: .followUSB)
+        followUSBName = try? c.decodeIfPresent(String.self, forKey: .followUSBName)
     }
 }
 
@@ -106,6 +112,14 @@ public enum ConfigStore {
         let cfg = AppConfig()
         save(cfg)
         return cfg
+    }
+
+    /// Posted (across processes) when `monitorctl` changes settings, so the running app reloads them.
+    public static let changedNotification = Notification.Name("com.dekun.RemoteMonitorControl.configChanged")
+
+    public static func notifyChanged() {
+        DistributedNotificationCenter.default().postNotificationName(changedNotification, object: nil,
+                                                                     userInfo: nil, deliverImmediately: true)
     }
 
     public static func save(_ cfg: AppConfig) {

@@ -18,8 +18,10 @@ final class AppModel: ObservableObject {
     @Published var lastMessage: String?
     @Published var busy = false
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @Published var usbDevices: [USBDevice] = []
 
     private let server = RemoteServer()
+    private let usbWatcher = USBWatcher()
     private var awakeAssertion: IOPMAssertionID = 0
     private var started = false
 
@@ -38,7 +40,14 @@ final class AppModel: ObservableObject {
         }
         applyServer()
         applyKeepAwake()
+        applyUSBFollow()
         refresh()
+        refreshUSBDevices()
+        // `monitorctl` posts this after changing settings.
+        DistributedNotificationCenter.default().addObserver(
+            forName: ConfigStore.changedNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppModel.shared.reloadConfig() }
+        }
         DispatchQueue.global(qos: .utility).async {
             MonitorController.shared.autoDetectInputPair()
             let cfg = ConfigStore.load()
@@ -120,6 +129,54 @@ final class AppModel: ObservableObject {
             applyServer()
         }
         applyKeepAwake()
+        if old.followUSB != config.followUSB { applyUSBFollow() }
+    }
+
+    func reloadConfig() {
+        let old = config
+        config = ConfigStore.load()
+        if old.serverEnabled != config.serverEnabled || old.port != config.port || old.token != config.token {
+            applyServer()
+        }
+        applyKeepAwake()
+        if old.followUSB != config.followUSB { applyUSBFollow() }
+        refresh()
+    }
+
+    // MARK: Follow USB switch
+
+    func refreshUSBDevices() {
+        usbDevices = USBDevice.connected().filter { !$0.isHub }
+    }
+
+    func setFollowUSB(_ key: String?) {
+        let name = key.flatMap { k in usbDevices.first { $0.key == k }?.name }
+        update {
+            $0.followUSB = key
+            $0.followUSBName = name
+        }
+        if let name {
+            lastMessage = "Following \(name): unplugged → \(InputSource.describe(config.inputB)), back → \(InputSource.describe(config.inputA))"
+        } else {
+            lastMessage = "Not following a USB device"
+        }
+    }
+
+    private func applyUSBFollow() {
+        guard let key = config.followUSB, let ids = USBDevice.parseKey(key) else {
+            usbWatcher.stop()
+            return
+        }
+        usbWatcher.start(vendorID: ids.vendor, productID: ids.product) { present in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let message = MonitorController.shared.followUSB(present: present)
+                Task { @MainActor in
+                    AppModel.shared.lastMessage = "USB switch \(present ? "back on this Mac" : "moved away"): " + message
+                    AppModel.shared.refresh()
+                    AppModel.shared.refreshUSBDevices()
+                }
+            }
+        }
     }
 
     func regenerateToken() {

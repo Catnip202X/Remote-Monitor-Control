@@ -67,6 +67,17 @@ The first three are shortcuts named exactly as you say them, because Siri runs a
 
 The app also has built-in Siri phrases that work with no import. Apple requires those to contain the app's name, for example "*Turn off my monitor with Remote Monitor Control*".
 
+## Follow a USB switch
+
+If your keyboard and mouse go through a USB sharing switch (for example the Sabrent USB-SW30) shared with another computer, the monitor can follow the switch. Press the switch's button once and both the keyboard and the screen move.
+
+1. In the menu-bar app, set **Follow USB switch** to your keyboard. Or run `monitorctl usb` to list devices, then `monitorctl usb follow 1532:0257` with your keyboard's ID.
+2. When the keyboard leaves this Mac, the monitor switches to **Input B**, the other computer. When it comes back, the monitor switches to **Input A**, this Mac, and the Mac wakes the screen.
+
+Pick the keyboard rather than the switch itself. Many switches use a generic hub chip that other hubs share. Your shortcuts keep working as before. To test without switching, run `monitorctl usb watch --dry-run` and press the switch's button.
+
+This only works when the switch moves the keyboard. A switch with only a button on the box can't be pressed by a shortcut. A button-pressing gadget such as a SwitchBot Bot, triggered from the Home app, can do that, and the monitor then follows.
+
 ## Monitor brands
 
 The app works out how to control each monitor by itself. It reads the manufacturer from the monitor's EDID and asks the monitor for its DDC/CI capabilities, the list of commands it supports. With the default power method, **Automatic**, it then picks:
@@ -136,6 +147,7 @@ monitorctl input hdmi2           # hdmi1 hdmi2 dp1 dp2 usbc dvi vga or 0x11
 monitorctl get 0x10              # read any VCP code (0x10 = brightness)
 monitorctl set 0x10 70
 monitorctl info                  # brand, capabilities and the method Automatic picked
+monitorctl usb                   # list USB devices; usb follow VID:PID | off; usb watch --dry-run
 monitorctl method auto           # how on/off work: auto (default), ddc+signal, ddc, signal
 monitorctl export-shortcuts ~/Desktop
 monitorctl config

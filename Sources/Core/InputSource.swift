@@ -99,6 +99,14 @@ extension MonitorController {
             }
         }
         if done.isEmpty { throw MonitorError.ddcFailed(failed) }
+        // Switching back to this Mac's input: the monitor re-syncs to the Mac's signal,
+        // and macOS may not redraw until it sees activity. Act like a mouse move now and
+        // again once the monitor has settled.
+        if value & 0xFF == ConfigStore.load().inputA & 0xFF {
+            Self.declareUserActivity()
+            usleep(1_500_000)
+            Self.declareUserActivity()
+        }
         var message = "\(done.joined(separator: ", ")) switched to \(InputSource.describe(value))"
         if !failed.isEmpty { message += " (no response from \(failed.joined(separator: ", ")))" }
         return message

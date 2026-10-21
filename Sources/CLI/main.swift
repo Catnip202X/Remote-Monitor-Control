@@ -26,6 +26,10 @@ USAGE
   monitorctl export-shortcuts [DIR] [--host HOST]
                                           create iPhone .shortcut files for the remote server
   monitorctl info [-d DISPLAY] [--refresh] show brand, capabilities and the chosen methods
+  monitorctl usb                          list USB devices (* = followed)
+  monitorctl usb follow VID:PID | off     follow a USB switch: device gone → input B, back → input A
+  monitorctl usb watch [VID:PID] [--dry-run]
+                                          watch in the foreground and print what happens
   monitorctl method [auto|ddc+signal|ddc|signal]
                                           show / set how on and off work (default auto)
   monitorctl config                       show settings (incl. remote token)
@@ -63,11 +67,13 @@ func number(_ text: String) -> UInt16? {
 let display = takeOption(["-d", "--display"])
 let methodOption = takeOption(["-m", "--method"])
 let hostOption = takeOption(["--host"])
-let refreshFlag: Bool = {
-    guard let i = args.firstIndex(of: "--refresh") else { return false }
+func takeFlag(_ name: String) -> Bool {
+    guard let i = args.firstIndex(of: name) else { return false }
     args.remove(at: i)
     return true
-}()
+}
+let refreshFlag = takeFlag("--refresh")
+let dryRun = takeFlag("--dry-run")
 
 var config = ConfigStore.load()
 func parseMethod(_ text: String) -> PowerMethod? {
@@ -131,6 +137,7 @@ do {
             config.inputB = b
             config.inputsAutoDetected = true
             ConfigStore.save(config)
+            ConfigStore.notifyChanged()
         }
         print("Input A: \(InputSource.describe(config.inputA))")
         print("Input B: \(InputSource.describe(config.inputB))")
@@ -179,12 +186,63 @@ do {
             if let caps { print("   Capabilities:   \(caps.raw)") }
         }
 
+    case "usb":
+        let sub = args.count >= 2 ? args[1].lowercased() : "list"
+        switch sub {
+        case "list":
+            let devices = USBDevice.connected().filter { !$0.isHub }
+            if devices.isEmpty { print("No USB devices found.") }
+            for d in devices {
+                let mark = d.key == config.followUSB ? "*" : " "
+                print("\(mark) \(d.key)  \(d.name)")
+            }
+            if let key = config.followUSB {
+                print("\nFollowing \(config.followUSBName ?? key): gone → \(InputSource.describe(config.inputB)), back → \(InputSource.describe(config.inputA))")
+            }
+        case "follow":
+            guard args.count >= 3 else { fail("usage: monitorctl usb follow VID:PID | off") }
+            var saved = ConfigStore.load()
+            if args[2].lowercased() == "off" {
+                saved.followUSB = nil
+                saved.followUSBName = nil
+                print("Not following a USB device.")
+            } else {
+                guard let ids = USBDevice.parseKey(args[2]) else { fail("Use the VID:PID from `monitorctl usb`, e.g. 1532:0257") }
+                let key = String(format: "%04x:%04x", ids.vendor, ids.product)
+                let name = USBDevice.connected().first { $0.key == key }?.name
+                saved.followUSB = key
+                saved.followUSBName = name
+                print("Following \(name ?? key): gone → \(InputSource.describe(saved.inputB)), back → \(InputSource.describe(saved.inputA))")
+            }
+            ConfigStore.save(saved)
+            ConfigStore.notifyChanged()
+        case "watch":
+            let key = args.count >= 3 ? args[2] : config.followUSB
+            guard let key, let ids = USBDevice.parseKey(key) else { fail("usage: monitorctl usb watch VID:PID (or set one with `usb follow`)") }
+            let watcher = USBWatcher()
+            watcher.start(vendorID: ids.vendor, productID: ids.product) { present in
+                let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+                if dryRun {
+                    print("\(stamp) device \(present ? "connected" : "disconnected") (dry run: would switch to \(InputSource.describe(present ? config.inputA : config.inputB)))")
+                } else {
+                    print("\(stamp) device \(present ? "connected" : "disconnected"): \(controller.followUSB(present: present, config: config))")
+                }
+                fflush(stdout)
+            }
+            print("Watching \(key) (now \(watcher.isPresent() ? "connected" : "not connected")). Press Ctrl-C to stop.")
+            fflush(stdout)
+            CFRunLoopRun()
+        default:
+            fail("usage: monitorctl usb [list | follow VID:PID | follow off | watch [VID:PID] [--dry-run]]")
+        }
+
     case "method":
         if args.count >= 2 {
             guard let parsed = parseMethod(args[1]) else { fail("usage: monitorctl method auto|ddc+signal|ddc|signal") }
             var saved = ConfigStore.load()
             saved.method = parsed
             ConfigStore.save(saved)
+            ConfigStore.notifyChanged()
             config.method = parsed
         }
         print("Method: \(config.method.label)")

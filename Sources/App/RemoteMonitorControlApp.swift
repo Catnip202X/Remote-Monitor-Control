@@ -90,6 +90,10 @@ struct MenuContent: View {
 
             Divider()
 
+            usbSection
+
+            Divider()
+
             remoteSection
 
             Divider()
@@ -117,6 +121,7 @@ struct MenuContent: View {
         .onAppear {
             model.start()
             model.refresh()
+            model.refreshUSBDevices()
         }
     }
 
@@ -126,6 +131,26 @@ struct MenuContent: View {
             if !InputSource.common.contains(where: { $0.value == value }) {
                 Text(InputSource.describe(value)).tag(value)
             }
+        }
+    }
+
+    @ViewBuilder private var usbSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Follow USB switch", selection: Binding(
+                get: { model.config.followUSB ?? "" },
+                set: { key in model.setFollowUSB(key.isEmpty ? nil : key) })) {
+                Text("Off").tag("")
+                ForEach(model.usbDevices) { Text($0.name).tag($0.key) }
+                if let key = model.config.followUSB, !model.usbDevices.contains(where: { $0.key == key }) {
+                    Text("\(model.config.followUSBName ?? key) (not connected)").tag(key)
+                }
+            }
+            Text(model.config.followUSB == nil
+                 ? "Pick the keyboard on your USB switch: when it moves to the other computer, the monitor follows."
+                 : "Unplugged → \(InputSource.describe(model.config.inputB)) · back → \(InputSource.describe(model.config.inputA))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
