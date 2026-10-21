@@ -21,7 +21,7 @@ jobs:
   build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -39,7 +39,7 @@ jobs:
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
       - name: Upload build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Remote-Monitor-Control
           path: ${{ steps.zip.outputs.zip }}
