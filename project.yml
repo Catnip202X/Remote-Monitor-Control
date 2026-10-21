@@ -1,0 +1,80 @@
+# XcodeGen spec → generates RemoteMonitorControl.xcodeproj  (run ./build.sh)
+name: RemoteMonitorControl
+options:
+  bundleIdPrefix: com.dekun
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ARCHS: arm64
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  monitorctl:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/Core
+      - path: Sources/CLI
+    settings:
+      base:
+        PRODUCT_NAME: monitorctl
+        PRODUCT_BUNDLE_IDENTIFIER: com.dekun.RemoteMonitorControl.monitorctl
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Core/IOAVService-Bridging.h
+    dependencies:
+      - sdk: IOKit.framework
+      - sdk: SystemConfiguration.framework
+
+  RemoteMonitorControl:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Core
+      - path: Sources/App
+    info:
+      path: Sources/App/Info.plist
+      properties:
+        CFBundleName: Remote Monitor Control
+        CFBundleDisplayName: Remote Monitor Control
+        CFBundleShortVersionString: "1.1"
+        CFBundleVersion: "2"
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "© 2026 Dekun Kong"
+        NSLocalNetworkUsageDescription: "Remote Monitor Control listens on your local network so Shortcuts on your iPhone, iPad or Apple Watch can turn this Mac's monitor on and off."
+        CFBundleURLTypes:
+          - CFBundleURLName: com.dekun.RemoteMonitorControl
+            CFBundleURLSchemes: [remotemonitor]
+    settings:
+      base:
+        PRODUCT_NAME: Remote Monitor Control
+        PRODUCT_BUNDLE_IDENTIFIER: com.dekun.RemoteMonitorControl
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Core/IOAVService-Bridging.h
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: monitorctl
+        link: false
+        embed: false
+      - sdk: IOKit.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: AppIntents.framework
+      - sdk: ServiceManagement.framework
+    postBuildScripts:
+      - name: Embed monitorctl CLI
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          cp -f "${BUILT_PRODUCTS_DIR}/monitorctl" "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/monitorctl"
+          # Strip Finder/file-provider metadata, which codesign rejects.
+          xattr -cr "${TARGET_BUILD_DIR}/${WRAPPER_NAME}" || true
+          codesign --force --sign - "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/monitorctl"
+    scheme: {}

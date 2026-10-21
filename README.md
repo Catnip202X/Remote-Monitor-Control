@@ -1,0 +1,109 @@
+# Remote Monitor Control
+
+Turn your external monitor **on/off** and **switch its input** from the macOS menu bar, the Shortcuts app, Siri, the command line, or your iPhone, iPad or Apple Watch.
+
+It works like the Windows tools (ControlMyMonitor, Twinkle Tray, Monitorian): it sends **DDC/CI** commands over the video cable.
+
+| Command | DDC/CI VCP code | Values |
+|---|---|---|
+| Power | `0xD6` | `0x01` on · `0x04` standby/off · `0x05` hard off |
+| Input | `0x60` | `0x11` HDMI 1 · `0x12` HDMI 2 · `0x0F` DP 1 · `0x10` DP 2 · `0x1B` USB-C |
+
+## Install
+
+You need Xcode (full Xcode, not just the Command Line Tools) and Homebrew. The script installs XcodeGen if it's missing.
+
+```bash
+git clone https://github.com/<you>/Remote-Monitor-Control.git
+cd Remote-Monitor-Control
+./build.sh
+```
+
+The script builds in `~/Library/Caches/RemoteMonitorControl` (iCloud-synced folders such as Documents add file metadata that breaks code signing). It:
+
+1. builds the app,
+2. installs it to `/Applications`,
+3. links the `monitorctl` command,
+4. launches the app (it has a display icon in the menu bar), and
+5. writes the iPhone shortcuts into `./Shortcuts`.
+
+Before the first run, turn on **DDC/CI** in your monitor's on-screen menu. It's usually under *System* or *Other*.
+
+> **Mac mini port note:** the HDMI port on the **M1** Mac mini doesn't pass DDC. If nothing responds, connect the monitor with **USB-C/Thunderbolt** (a USB-C→DisplayPort or USB-C→HDMI cable works). On M2 and later, the HDMI port works.
+
+## The two buttons
+
+| Shortcut | What one press does |
+|---|---|
+| **Remote Monitor Control On/Off** | Reads the monitor's power state over DDC. If it's on, it turns it off; if it's off, it turns it on. |
+| **Remote Monitor Control Input Switching** | Flips between **Input A** and **Input B**. On A it goes to B; on anything else it goes to A. |
+
+Set Input A and Input B in the menu-bar app. On first launch, A is set to whichever input the Mac is using. You can also set them from the command line: `monitorctl input-pair dp1 hdmi1`.
+
+If a monitor doesn't answer status reads (some don't in standby), the app falls back to the last state it set.
+
+## 1. Shortcuts on the Mac (App Intents)
+
+After the first launch, **Remote Monitor Control On/Off** and **Remote Monitor Control Input Switching** appear in the Shortcuts app on their own, with no setup. You can pin them to the menu bar, give them a keyboard shortcut, or use Siri: "*Remote Monitor Control On/Off*" / "*Remote Monitor Control Input Switching*" (the shorter "*Remote Monitor Control power*" / "*… input*" also work).
+
+For automations, there are also these actions (search Shortcuts for "Monitor"): *Turn Monitor On/Off*, *Set Monitor Power*, *Is Monitor On?*, *Switch Monitor Input* (to a specific input), and *Get Monitor Input*. Each one has an optional **Monitor** parameter. Leave it empty to control every external monitor.
+
+Other Mac options:
+
+- URL scheme: `remotemonitor://toggle`, `remotemonitor://toggle-input`, `remotemonitor://on`, `remotemonitor://off`, `remotemonitor://input?source=hdmi2`
+- Shell (or a Shortcuts *Run Shell Script* action): `monitorctl toggle`, `monitorctl input toggle`
+
+## 2. Remote control from iPhone / iPad / Apple Watch
+
+The app runs a small server on your home network at port **8765**. A secret token protects it.
+
+**Easy way:** after `./build.sh`, the `Shortcuts/` folder holds three signed shortcuts: **Remote Monitor Control On/Off**, **Remote Monitor Control Input Switching** and **Monitor Status**. Double-click them on the Mac to import them. They sync to your iPhone and Watch through iCloud, or you can AirDrop them. You can also re-export them from the menu-bar app with **Export iPhone Shortcuts…**.
+
+**Manual way:** in Shortcuts on the iPhone, add a **Get Contents of URL** action with
+`http://<your-mac>.local:8765/toggle?token=<token>`.
+To get the exact URL, use **Copy URL** in the menu-bar app or run `monitorctl config`.
+
+Endpoints: `/toggle`, `/toggle-input`, `/on`, `/off`, `/status`, `/input` (read the current input), and `/input?source=hdmi1|hdmi2|dp1|dp2|usbc|0x11`. Add `&display=2` or `&display=Dell` to target one monitor.
+
+Notes:
+
+- The first time the iPhone connects, macOS may ask to allow **local network** or incoming connections. Allow it.
+- **Keep Mac awake** (on by default) stops the Mac from going idle-to-sleep, so it can still receive commands. The display can still sleep.
+- Away from home? Install **Tailscale** on the Mac and the iPhone, then use the Mac's Tailscale name instead of `.local`.
+- **New Security Token** (under *Copy URL*) blocks old URLs. Export the shortcuts again afterwards.
+
+## 3. Command line
+
+```
+monitorctl list
+monitorctl toggle                # one-button power
+monitorctl input toggle          # one-button input A ⇄ B
+monitorctl input-pair dp1 hdmi1  # set A and B
+monitorctl off | on | status     [-d 1 | -d "DELL"]
+monitorctl input                 # shows the current input (raw code)
+monitorctl input hdmi2           # hdmi1 hdmi2 dp1 dp2 usbc dvi vga or 0x11
+monitorctl get 0x10              # read any VCP code (0x10 = brightness)
+monitorctl set 0x10 70
+monitorctl export-shortcuts ~/Desktop
+monitorctl config
+```
+
+## Troubleshooting
+
+- **"Off" works but "On" doesn't:** set *Off mode* to **Standby (0x04)**, which is the default. Under *Power off (0x05)*, many monitors shut down their DDC chip and can't be woken remotely. If the monitor still won't wake, switch *Method* to **macOS display sleep**. That works with any monitor.
+- **Input switching uses odd codes:** some brands, LG in particular, don't use the standard numbers. Put the monitor on each input by hand and run `monitorctl input` to see its code. Then use that number, for example `monitorctl input 0x90` or **Custom code** in Shortcuts.
+- **Switching back from another computer:** after the monitor changes input, the Mac usually still has a DDC link and can switch it back. Some monitors drop DDC from inactive inputs; for those, switch back from the monitor's buttons.
+- **Debugging reads:** run any command with `RMC_DEBUG=1` (for example `RMC_DEBUG=1 monitorctl get 0x60`) to print the raw DDC reply bytes.
+- **Power status shows "last known":** some monitors, including the Samsung Odyssey G5, answer a power read (0xD6) with 0, which means "not supported". The app then uses the last state it set.
+- **Nothing detected:** run `monitorctl list`. Check the cable and port (see the note above), and check that DDC/CI is on in the monitor's menu.
+
+## Project layout
+
+```
+Sources/Core/   DDC/CI over IOAVService, display discovery, power + input logic, config, shortcut exporter
+Sources/App/    SwiftUI menu-bar app, App Intents (Shortcuts/Siri), LAN HTTP server
+Sources/CLI/    monitorctl
+project.yml     XcodeGen spec (build.sh generates the .xcodeproj)
+```
+
+Settings live in `~/Library/Application Support/Remote Monitor Control/config.json`.
