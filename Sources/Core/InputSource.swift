@@ -82,6 +82,10 @@ extension MonitorController {
     private func _setInput(_ value: UInt16, displayID: String?) throws -> String {
         var done: [String] = []
         var failed: [String] = []
+        // Switching to this Mac's input: wake the Mac's display output first, so it is
+        // already sending video when the monitor arrives.
+        let toThisMac = value & 0xFF == ConfigStore.load().inputA & 0xFF
+        if toThisMac { Self.declareUserActivity() }
         for display in try resolve(displayID) {
             let style = profile(for: display).inputStyle
             let written: Bool
@@ -102,9 +106,13 @@ extension MonitorController {
         // Switching back to this Mac's input: the monitor re-syncs to the Mac's signal,
         // and macOS may not redraw until it sees activity. Act like a mouse move now and
         // again once the monitor has settled.
-        if value & 0xFF == ConfigStore.load().inputA & 0xFF {
-            Self.declareUserActivity()
-            usleep(1_500_000)
+        if toThisMac {
+            // The monitor re-syncs to the Mac's signal, and macOS may not redraw until it
+            // sees activity: act like a mouse move again once the monitor has settled.
+            for delay in [1.0, 2.0] {
+                DispatchQueue.global().asyncAfter(deadline: .now() + delay) { Self.declareUserActivity() }
+            }
+            usleep(150_000)
             Self.declareUserActivity()
         }
         var message = "\(done.joined(separator: ", ")) switched to \(InputSource.describe(value))"

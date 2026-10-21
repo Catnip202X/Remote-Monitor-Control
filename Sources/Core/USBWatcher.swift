@@ -76,7 +76,11 @@ public final class USBWatcher {
     private var pending: DispatchWorkItem?
     private var lastReported: Bool?
 
-    public static let settleDelay: TimeInterval = 0.6
+    /// How long to wait before acting, so a switch that flickers doesn't flip the
+    /// monitor back and forth. Coming back is acted on almost at once (the device has
+    /// already finished connecting); going away waits a little longer.
+    public static let connectDelay: TimeInterval = 0.1
+    public static let disconnectDelay: TimeInterval = 0.4
 
     public init() {}
 
@@ -151,7 +155,8 @@ public final class USBWatcher {
             self.onChange?(present)
         }
         pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleDelay, execute: work)
+        let delay = isPresent() ? Self.connectDelay : Self.disconnectDelay
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private static func drain(_ iterator: io_iterator_t) {

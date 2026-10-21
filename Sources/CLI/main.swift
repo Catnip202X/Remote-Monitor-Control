@@ -221,7 +221,9 @@ do {
             guard let key, let ids = USBDevice.parseKey(key) else { fail("usage: monitorctl usb watch VID:PID (or set one with `usb follow`)") }
             let watcher = USBWatcher()
             watcher.start(vendorID: ids.vendor, productID: ids.product) { present in
-                let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm:ss.SSS"
+                let stamp = formatter.string(from: Date())
                 if dryRun {
                     print("\(stamp) device \(present ? "connected" : "disconnected") (dry run: would switch to \(InputSource.describe(present ? config.inputA : config.inputB)))")
                 } else {
