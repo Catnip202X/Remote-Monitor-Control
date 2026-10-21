@@ -9,23 +9,29 @@
 import Foundation
 
 public enum PowerMethod: String, Codable, CaseIterable, Identifiable, Sendable {
-    /// Send VCP 0xD6 over DDC/CI — the monitor itself powers down (like the Windows apps).
+    /// Send VCP 0xD6 over DDC/CI *and* turn off the Mac's video signal. Many monitors
+    /// (Samsung Odyssey, for one) accept the DDC standby command but wake straight back
+    /// up while the Mac is still sending video; stopping the signal keeps them off.
+    /// Only the displays turn off; the Mac itself keeps running.
+    case ddcAndSignalOff
+    /// Send VCP 0xD6 over DDC/CI only — the monitor itself powers down (like the Windows apps).
     case ddc
-    /// Ask macOS to sleep / wake all displays (works with any monitor, but it's the Mac
-    /// that stops sending a signal; the monitor goes to its own standby).
+    /// Only turn off the Mac's video signal (works with any monitor; the monitor goes to
+    /// its own standby when the signal stops). The Mac itself keeps running.
     case displaySleep
 
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .ddc: return "DDC/CI (monitor power)"
-        case .displaySleep: return "macOS display sleep"
+        case .ddcAndSignalOff: return "DDC/CI + turn off video signal"
+        case .ddc: return "DDC/CI only"
+        case .displaySleep: return "Turn off video signal only"
         }
     }
 }
 
 public struct AppConfig: Codable, Equatable, Sendable {
-    public var method: PowerMethod = .ddc
+    public var method: PowerMethod = .ddcAndSignalOff
     /// Value written to VCP 0xD6 to turn off: 0x04 (DPM off / standby — most monitors can
     /// be woken again over DDC) or 0x05 (hard power off — often can't be woken remotely).
     public var ddcOffValue: UInt8 = 0x04

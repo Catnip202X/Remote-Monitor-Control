@@ -96,6 +96,23 @@ public final class MonitorController {
                 try Self.run("/usr/bin/pmset", ["displaysleepnow"])
                 return "Displays put to sleep"
 
+            case .ddcAndSignalOff:
+                // Off: DDC standby first, then stop the video signal so the monitor stays off.
+                // On: declaring user activity (above) restores the signal, then DDC power-on.
+                // Only the displays turn off; the Mac keeps running.
+                let list = try targets(displayID)
+                var names: [String] = []
+                for display in list {
+                    let value: UInt16 = on ? 0x01 : UInt16(config.ddcOffValue)
+                    _ = DDC.write(display.service, vcp: DDC.vcpPowerMode, value: value)
+                    ConfigStore.setLastKnownPower(on, for: display.id)
+                    names.append(display.name)
+                }
+                if !on {
+                    try Self.run("/usr/bin/pmset", ["displaysleepnow"])
+                }
+                return "\(names.joined(separator: ", ")) turned \(on ? "on" : "off")"
+
             case .ddc:
                 let list = try targets(displayID)
                 var failed: [String] = []
@@ -120,9 +137,9 @@ public final class MonitorController {
     @discardableResult
     public func toggle(displayID: String? = nil, config: AppConfig = ConfigStore.load()) throws -> String {
         switch config.method {
-        case .displaySleep:
-            let asleep = CGDisplayIsAsleep(CGMainDisplayID()) != 0
-            return try setPower(asleep, displayID: displayID, config: config)
+        case .displaySleep, .ddcAndSignalOff:
+            // Whether the video signal is off is the real on/off state for these methods.
+            return try setPower(Self.videoSignalOff(), displayID: displayID, config: config)
         case .ddc:
             let states = status(displayID: displayID)
             // Unknown counts as "on" so the first toggle turns things off.
@@ -131,9 +148,13 @@ public final class MonitorController {
         }
     }
 
-    public func status(displayID: String? = nil) -> [MonitorStatus] {
+    public func status(displayID: String? = nil, config: AppConfig = ConfigStore.load()) -> [MonitorStatus] {
         locked {
             guard let list = try? targets(displayID) else { return [] }
+            if config.method != .ddc {
+                let on = !Self.videoSignalOff()
+                return list.map { MonitorStatus(id: $0.id, name: $0.name, isOn: on, source: "video signal") }
+            }
             let cache = ConfigStore.lastKnownPower()
             return list.map { display in
                 // Valid power-mode values are 0x01…0x05. Some monitors (e.g. Samsung Odyssey)
@@ -170,6 +191,11 @@ public final class MonitorController {
     }
 
     // MARK: Helpers
+
+    /// True when macOS has turned off the video signal to the displays.
+    public static func videoSignalOff() -> Bool {
+        CGDisplayIsAsleep(CGMainDisplayID()) != 0
+    }
 
     /// Equivalent of moving the mouse: wakes sleeping displays.
     public static func declareUserActivity() {

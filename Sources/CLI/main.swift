@@ -25,11 +25,14 @@ USAGE
   monitorctl set VCP VALUE [-d DISPLAY]   write any VCP code  (e.g. set 0x10 50 = brightness 50)
   monitorctl export-shortcuts [DIR] [--host HOST]
                                           create iPhone .shortcut files for the remote server
+  monitorctl method [ddc+signal|ddc|signal]
+                                          show / set how on and off work (default ddc+signal)
   monitorctl config                       show settings (incl. remote token)
 
 OPTIONS
   -d, --display DISPLAY   number from `list`, part of the name, or the id (default: all)
-  -m, --method ddc|sleep  override the power method for this command
+  -m, --method ddc+signal|ddc|signal
+                          override the power method for this command
 """
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -61,8 +64,21 @@ let methodOption = takeOption(["-m", "--method"])
 let hostOption = takeOption(["--host"])
 
 var config = ConfigStore.load()
-if let m = methodOption?.lowercased() {
-    config.method = (m == "sleep" || m == "displaysleep") ? .displaySleep : .ddc
+func parseMethod(_ text: String) -> PowerMethod? {
+    switch text.lowercased() {
+    case "ddc+signal", "both", "default": return .ddcAndSignalOff
+    case "ddc": return .ddc
+    case "signal", "sleep", "displaysleep": return .displaySleep
+    default: return nil
+    }
+}
+
+if let m = methodOption {
+    guard let parsed = parseMethod(m) else {
+        FileHandle.standardError.write(Data("Unknown method \u{201C}\(m)\u{201D}. Use ddc+signal, ddc or signal.\n".utf8))
+        exit(2)
+    }
+    config.method = parsed
 }
 
 guard let command = args.first?.lowercased() else {
@@ -90,7 +106,7 @@ do {
         print(try controller.toggle(displayID: display, config: config))
 
     case "status":
-        let statuses = controller.status(displayID: display)
+        let statuses = controller.status(displayID: display, config: config)
         if statuses.isEmpty { fail("No external DDC/CI monitors found.") }
         for s in statuses {
             print("\(s.name): \(s.stateText) (\(s.source))")
@@ -137,6 +153,16 @@ do {
         }
         try controller.writeVCP(UInt8(vcp), value: value, displayID: display)
         print("OK")
+
+    case "method":
+        if args.count >= 2 {
+            guard let parsed = parseMethod(args[1]) else { fail("usage: monitorctl method ddc+signal|ddc|signal") }
+            var saved = ConfigStore.load()
+            saved.method = parsed
+            ConfigStore.save(saved)
+            config.method = parsed
+        }
+        print("Method: \(config.method.label)")
 
     case "export-shortcuts":
         let dir = args.count >= 2 ? args[1] : FileManager.default.currentDirectoryPath

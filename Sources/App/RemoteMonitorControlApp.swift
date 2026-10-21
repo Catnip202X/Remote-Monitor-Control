@@ -78,7 +78,7 @@ struct MenuContent: View {
                     set: { value in model.update { $0.method = value } })) {
                     ForEach(PowerMethod.allCases) { Text($0.label).tag($0) }
                 }
-                if model.config.method == .ddc {
+                if model.config.method != .displaySleep {
                     Picker("Off mode", selection: Binding(
                         get: { model.config.ddcOffValue },
                         set: { value in model.update { $0.ddcOffValue = value } })) {

@@ -84,17 +84,19 @@ monitorctl input                 # shows the current input (raw code)
 monitorctl input hdmi2           # hdmi1 hdmi2 dp1 dp2 usbc dvi vga or 0x11
 monitorctl get 0x10              # read any VCP code (0x10 = brightness)
 monitorctl set 0x10 70
+monitorctl method ddc+signal     # how on/off work: ddc+signal (default), ddc, signal
 monitorctl export-shortcuts ~/Desktop
 monitorctl config
 ```
 
 ## Troubleshooting
 
-- **"Off" works but "On" doesn't:** set *Off mode* to **Standby (0x04)**, which is the default. Under *Power off (0x05)*, many monitors shut down their DDC chip and can't be woken remotely. If the monitor still won't wake, switch *Method* to **macOS display sleep**. That works with any monitor.
+- **The monitor blinks but doesn't turn off:** many monitors, including the Samsung Odyssey G5, accept the DDC standby command and then wake straight back up because the Mac is still sending video. The default method, **DDC/CI + turn off video signal**, also stops the Mac's video output so the monitor stays off. Only the displays turn off; the Mac keeps running. Change it with `monitorctl method ddc+signal|ddc|signal` or the *Method* picker in the menu.
+- **"Off" works but "On" doesn't:** set *Off mode* to **Standby (0x04)**, which is the default. Under *Power off (0x05)*, many monitors shut down their DDC chip and can't be woken remotely. If the monitor still won't wake, switch *Method* to **Turn off video signal only**. That works with any monitor.
 - **Input switching uses odd codes:** some brands, LG in particular, don't use the standard numbers. Put the monitor on each input by hand and run `monitorctl input` to see its code. Then use that number, for example `monitorctl input 0x90` or **Custom code** in Shortcuts.
 - **Switching back from another computer:** after the monitor changes input, the Mac usually still has a DDC link and can switch it back. Some monitors drop DDC from inactive inputs; for those, switch back from the monitor's buttons.
 - **Debugging reads:** run any command with `RMC_DEBUG=1` (for example `RMC_DEBUG=1 monitorctl get 0x60`) to print the raw DDC reply bytes.
-- **Power status shows "last known":** some monitors, including the Samsung Odyssey G5, answer a power read (0xD6) with 0, which means "not supported". The app then uses the last state it set.
+- **Power status:** some monitors, including the Samsung Odyssey G5, answer a power read (0xD6) with 0, which means "not supported". With the default method the app reads whether the Mac's video signal is on instead; with *DDC/CI only* it uses the last state it set.
 - **Nothing detected:** run `monitorctl list`. Check the cable and port (see the note above), and check that DDC/CI is on in the monitor's menu.
 
 ## Project layout
