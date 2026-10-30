@@ -54,6 +54,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// or nil when off. Gone → Input B, back → Input A.
     public var followUSB: String? = nil
     public var followUSBName: String? = nil
+    /// Show the monitor in Apple's Home app as a TV (built-in HomeKit accessory).
+    public var homeKitEnabled: Bool = true
 
     public init() {}
 
@@ -77,6 +79,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         inputsAutoDetected = (try? c.decode(Bool.self, forKey: .inputsAutoDetected)) ?? d.inputsAutoDetected
         followUSB = try? c.decodeIfPresent(String.self, forKey: .followUSB)
         followUSBName = try? c.decodeIfPresent(String.self, forKey: .followUSBName)
+        homeKitEnabled = (try? c.decode(Bool.self, forKey: .homeKitEnabled)) ?? d.homeKitEnabled
     }
 }
 

@@ -6,7 +6,12 @@ When you release, move the **Unreleased** notes under a new version heading and 
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-30
+
 ### Added
+- **Apple Home.** The monitor shows up in the Home app as a TV, with no Homebridge or hub needed. The power button turns the monitor on and off, and each input the monitor reports can be picked and renamed. It works in Control Center's remote, scenes, automations and Siri.
+- An **Apple Home** section in the menu-bar app, with the setup code and a QR code to scan, and a way to reset the pairing.
+- `monitorctl homekit` shows the setup code and pairing state.
 - This changelog. GitHub releases now take their notes from it.
 
 ## [1.3.1] - 2026-10-21
@@ -61,7 +66,8 @@ First public release.
 - DDC reads work. The read request had the wrong checksum and sub-address.
 - A power reading of 0 means "not supported" and is no longer shown as "off".
 
-[Unreleased]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Catnip202X/Remote-Monitor-Control/compare/v1.1.0...v1.2.0

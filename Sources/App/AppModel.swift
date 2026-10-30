@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
     @Published var usbDevices: [USBDevice] = []
+    @Published var homeKit = HomeKitStatus()
 
     private let server = RemoteServer()
     private let usbWatcher = USBWatcher()
@@ -41,6 +42,13 @@ final class AppModel: ObservableObject {
         applyServer()
         applyKeepAwake()
         applyUSBFollow()
+        HAPServer.shared.onStatusChange = { status in
+            Task { @MainActor in AppModel.shared.homeKit = status }
+        }
+        applyHomeKit()
+        NotificationCenter.default.addObserver(forName: .homeKitChangedMonitor, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppModel.shared.refresh() }
+        }
         refresh()
         refreshUSBDevices()
         // `monitorctl` posts this after changing settings.
@@ -56,6 +64,7 @@ final class AppModel: ObservableObject {
                 AppModel.shared.config.inputB = cfg.inputB
                 AppModel.shared.config.inputsAutoDetected = cfg.inputsAutoDetected
             }
+            HAPServer.shared.reloadLayout()
         }
     }
 
@@ -65,6 +74,7 @@ final class AppModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let s = MonitorController.shared.status()
             Task { @MainActor in AppModel.shared.statuses = s }
+            HAPServer.shared.monitorStateMayHaveChanged()
         }
     }
 
@@ -130,6 +140,7 @@ final class AppModel: ObservableObject {
         }
         applyKeepAwake()
         if old.followUSB != config.followUSB { applyUSBFollow() }
+        applyHomeKitChanges(from: old)
     }
 
     func reloadConfig() {
@@ -140,7 +151,31 @@ final class AppModel: ObservableObject {
         }
         applyKeepAwake()
         if old.followUSB != config.followUSB { applyUSBFollow() }
+        applyHomeKitChanges(from: old)
         refresh()
+    }
+
+    // MARK: Apple Home
+
+    private func applyHomeKit() {
+        if config.homeKitEnabled {
+            HAPServer.shared.start()
+        } else {
+            HAPServer.shared.stop()
+        }
+    }
+
+    private func applyHomeKitChanges(from old: AppConfig) {
+        if old.homeKitEnabled != config.homeKitEnabled {
+            applyHomeKit()
+        } else if config.homeKitEnabled, old.inputA != config.inputA || old.inputB != config.inputB {
+            HAPServer.shared.reloadLayout()
+        }
+    }
+
+    func resetHomeKit() {
+        HAPServer.shared.reset()
+        lastMessage = "HomeKit reset. Remove the old TV from the Home app if it is still listed, then add it again with the new code."
     }
 
     // MARK: Follow USB switch

@@ -6,6 +6,11 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
 
+packages:
+  BigInt:
+    url: https://github.com/attaswift/BigInt
+    from: 5.3.0
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -40,17 +45,19 @@ targets:
     sources:
       - path: Sources/Core
       - path: Sources/App
+      - path: Sources/HomeKit
     info:
       path: Sources/App/Info.plist
       properties:
         CFBundleName: Remote Monitor Control
         CFBundleDisplayName: Remote Monitor Control
-        CFBundleShortVersionString: "1.3.1"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "1.4.0"
+        CFBundleVersion: "6"
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Dekun Kong"
-        NSLocalNetworkUsageDescription: "Remote Monitor Control listens on your local network so Shortcuts on your iPhone, iPad or Apple Watch can turn this Mac's monitor on and off."
+        NSLocalNetworkUsageDescription: "Remote Monitor Control listens on your local network so the Home app and Shortcuts on your iPhone, iPad or Apple Watch can control this Mac's monitor."
+        NSBonjourServices: [_hap._tcp]
         CFBundleURLTypes:
           - CFBundleURLName: com.dekun.RemoteMonitorControl
             CFBundleURLSchemes: [remotemonitor]
@@ -66,6 +73,7 @@ targets:
         embed: false
       - sdk: IOKit.framework
       - sdk: SystemConfiguration.framework
+      - package: BigInt
       - sdk: AppIntents.framework
       - sdk: ServiceManagement.framework
     postBuildScripts:

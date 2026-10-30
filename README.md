@@ -1,6 +1,6 @@
 # Remote Monitor Control
 
-Turn your external monitor **on/off** and **switch its input** from the macOS menu bar, the Shortcuts app, Siri, the command line, or your iPhone, iPad or Apple Watch.
+Turn your external monitor **on/off** and **switch its input** from the macOS menu bar, the Home app, the Shortcuts app, Siri, the command line, or your iPhone, iPad or Apple Watch.
 
 It works like the Windows tools (ControlMyMonitor, Twinkle Tray, Monitorian): it sends **DDC/CI** commands over the video cable.
 
@@ -66,6 +66,28 @@ Say any of these to Siri on your Mac, iPhone or Apple Watch:
 The first three are shortcuts named exactly as you say them, because Siri runs a shortcut when you say its name. Import **Turn Off My Monitor**, **Turn On My Monitor** and **Switch Inputs for My Monitor** from the `Shortcuts/` folder once, and iCloud syncs them to your iPhone and Watch. They reach the Mac over your Wi-Fi.
 
 The app also has built-in Siri phrases that work with no import. Apple requires those to contain the app's name, for example "*Turn off my monitor with Remote Monitor Control*".
+
+## Apple Home
+
+The app adds your monitor to the Home app as a **TV**. You don't need Homebridge or a hub.
+
+- The TV's power button turns the monitor on and off.
+- Every input the monitor reports (HDMI 1, DisplayPort and so on) is an input you can pick, and you can rename inputs in Home.
+- The TV shows up in Control Center's remote: left and right step through the inputs, and play/pause flips between Input A and Input B.
+- It works in scenes and automations, such as "Good night: monitor off", and with Siri ("Turn off the Odyssey G5").
+
+To add it:
+
+1. In the menu-bar app, check that **Apple Home** is on. It's on by default. The menu shows a setup code and a QR code.
+2. In the Home app, tap **+**, then **Add Accessory**. Scan the QR code, or tap **More options** and pick the monitor, then type the code. `monitorctl homekit` also prints the code.
+3. Accept the **Uncertified Accessory** prompt. This is normal for accessories without Apple's MFi certification, Homebridge devices included.
+
+Keep these in mind:
+
+- The Mac has to stay on, awake and running the app. **Keep Mac awake** is on by default.
+- The TV controls all external monitors together. The inputs listed come from the first monitor.
+- To start over, use **More → Reset HomeKit Pairing** in the menu, then remove the old TV from the Home app if it's still there.
+- The accessory's keys and pairings are in `~/Library/Application Support/Remote Monitor Control/homekit.json`.
 
 ## Follow a USB switch
 
@@ -150,6 +172,7 @@ monitorctl info                  # brand, capabilities and the method Automatic 
 monitorctl usb                   # list USB devices; usb follow VID:PID | off; usb watch --dry-run
 monitorctl method auto           # how on/off work: auto (default), ddc+signal, ddc, signal
 monitorctl export-shortcuts ~/Desktop
+monitorctl homekit               # Apple Home setup code and pairing state
 monitorctl config
 ```
 
@@ -161,6 +184,8 @@ monitorctl config
 - **Switching back from another computer:** after the monitor changes input, the Mac usually still has a DDC link and can switch it back. Some monitors drop DDC from inactive inputs; for those, switch back from the monitor's buttons.
 - **Debugging reads:** run any command with `RMC_DEBUG=1` (for example `RMC_DEBUG=1 monitorctl get 0x60`) to print the raw DDC reply bytes.
 - **Power status:** some monitors, including the Samsung Odyssey G5, answer a power read (0xD6) with 0, which means "not supported". With the default method the app reads whether the Mac's video signal is on instead; with *DDC/CI only* it uses the last state it set.
+- **The Home app can't find the TV:** make sure the iPhone and the Mac are on the same network, Apple Home is on in the menu, and macOS allowed Remote Monitor Control to find devices on your local network (System Settings → Privacy & Security → Local Network) and to accept incoming connections (the firewall).
+- **The TV shows "No Response":** the Mac is asleep, off, or the app isn't running. Turn on **Launch at login** and **Keep Mac awake**.
 - **Nothing detected:** run `monitorctl list`. Check the cable and port (see the note above), and check that DDC/CI is on in the monitor's menu.
 
 ## Project layout
@@ -168,6 +193,7 @@ monitorctl config
 ```
 Sources/Core/   DDC/CI over IOAVService, display discovery, brand profiles, power + input logic, config, shortcut exporter
 Sources/App/    SwiftUI menu-bar app, App Intents (Shortcuts/Siri), LAN HTTP server
+Sources/HomeKit/ HomeKit Accessory Protocol server (pairing, encrypted sessions) and the Television accessory
 Sources/CLI/    monitorctl
 project.yml     XcodeGen spec (build.sh generates the .xcodeproj)
 ```

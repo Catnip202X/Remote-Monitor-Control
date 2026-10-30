@@ -32,6 +32,7 @@ USAGE
                                           watch in the foreground and print what happens
   monitorctl method [auto|ddc+signal|ddc|signal]
                                           show / set how on and off work (default auto)
+  monitorctl homekit                      show the Apple Home setup code and pairing state
   monitorctl config                       show settings (incl. remote token)
 
 OPTIONS
@@ -254,6 +255,26 @@ do {
         let result = try ShortcutExporter.export(to: URL(fileURLWithPath: dir), host: hostOption, config: config)
         print(result.message)
         if !result.signed { exit(3) }
+
+    case "homekit":
+        guard config.homeKitEnabled else {
+            print("Apple Home is turned off. Turn it on in the menu-bar app.")
+            break
+        }
+        guard let identity = HomeKitStore.existing() else {
+            print("The app hasn't set up its HomeKit accessory yet. Open Remote Monitor Control first.")
+            break
+        }
+        if identity.isPaired {
+            print("Paired with Home (\(identity.pairings.count) controller\(identity.pairings.count == 1 ? "" : "s")).")
+            print("To pair again, use Reset HomeKit Pairing in the menu-bar app.")
+        } else {
+            print("Not paired yet. In the Home app: + → Add Accessory → More options, pick the monitor and enter:")
+            print("")
+            print("    \(identity.setupCode)")
+            print("")
+            print("Setup URI (for a QR code): \(identity.setupURI(category: 31))")
+        }
 
     case "config":
         print("Config file: \(ConfigStore.configURL.path)")

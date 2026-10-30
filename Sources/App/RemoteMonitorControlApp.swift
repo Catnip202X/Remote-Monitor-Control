@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import CoreImage
 import SwiftUI
 
 @main
@@ -98,6 +99,10 @@ struct MenuContent: View {
 
             Divider()
 
+            homeKitSection
+
+            Divider()
+
             Toggle("Launch at login", isOn: Binding(
                 get: { model.launchAtLogin },
                 set: { model.setLaunchAtLogin($0) }))
@@ -132,6 +137,63 @@ struct MenuContent: View {
                 Text(InputSource.describe(value)).tag(value)
             }
         }
+    }
+
+    @ViewBuilder private var homeKitSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Apple Home (shows up as a TV)", isOn: Binding(
+                get: { model.config.homeKitEnabled },
+                set: { value in model.update { $0.homeKitEnabled = value } }))
+
+            if model.config.homeKitEnabled {
+                if model.homeKit.paired {
+                    HStack {
+                        Label(model.homeKit.message, systemImage: "house.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Menu("More") {
+                            Button("Reset HomeKit Pairing") { model.resetHomeKit() }
+                        }
+                        .fixedSize()
+                        .controlSize(.small)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 10) {
+                        if let qr = Self.qrCode(model.homeKit.setupURI) {
+                            Image(nsImage: qr)
+                                .interpolation(.none)
+                                .resizable()
+                                .frame(width: 96, height: 96)
+                                .background(Color.white)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.homeKit.setupCode)
+                                .font(.system(.title3, design: .monospaced))
+                                .textSelection(.enabled)
+                            Text("Home app → + → Add Accessory, then scan the code or type the numbers. Accept the “uncertified accessory” prompt.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(model.homeKit.message)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static func qrCode(_ text: String) -> NSImage? {
+        guard !text.isEmpty, let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 6, y: 6)) else { return nil }
+        let rep = NSCIImageRep(ciImage: output)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     @ViewBuilder private var usbSection: some View {
