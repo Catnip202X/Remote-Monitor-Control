@@ -46,6 +46,10 @@ final class AppModel: ObservableObject {
             Task { @MainActor in AppModel.shared.homeKit = status }
         }
         applyHomeKit()
+        DistributedNotificationCenter.default().addObserver(
+            forName: HomeKitStore.resetNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppModel.shared.resetHomeKit() }
+        }
         NotificationCenter.default.addObserver(forName: .homeKitChangedMonitor, object: nil, queue: .main) { _ in
             Task { @MainActor in AppModel.shared.refresh() }
         }

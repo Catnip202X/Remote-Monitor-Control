@@ -33,6 +33,8 @@ USAGE
   monitorctl method [auto|ddc+signal|ddc|signal]
                                           show / set how on and off work (default auto)
   monitorctl homekit                      show the Apple Home setup code and pairing state
+  monitorctl homekit log                  show what the HomeKit server did (for troubleshooting)
+  monitorctl homekit reset                forget all Home pairings and make a new setup code
   monitorctl config                       show settings (incl. remote token)
 
 OPTIONS
@@ -255,6 +257,19 @@ do {
         let result = try ShortcutExporter.export(to: URL(fileURLWithPath: dir), host: hostOption, config: config)
         print(result.message)
         if !result.signed { exit(3) }
+
+    case "homekit" where args.count >= 2 && args[1].lowercased() == "log":
+        if let text = try? String(contentsOf: HomeKitStore.logURL, encoding: .utf8) {
+            print(text, terminator: "")
+        } else {
+            print("No HomeKit log yet.")
+        }
+
+    case "homekit" where args.count >= 2 && args[1].lowercased() == "reset":
+        DistributedNotificationCenter.default().postNotificationName(HomeKitStore.resetNotification, object: nil,
+                                                                     userInfo: nil, deliverImmediately: true)
+        print("Asked the app to reset its HomeKit pairing. Remove the old TV from the Home app if it's still listed,")
+        print("then add it again with the new code from `monitorctl homekit`.")
 
     case "homekit":
         guard config.homeKitEnabled else {

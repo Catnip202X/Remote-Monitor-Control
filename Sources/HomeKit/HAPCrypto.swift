@@ -171,3 +171,47 @@ enum HAPCrypto {
         return Data(bytes)
     }
 }
+
+// MARK: - Log
+
+/// Appends to ~/Library/Application Support/Remote Monitor Control/homekit.log (kept under 1 MB).
+enum HAPLog {
+    private static let queue = DispatchQueue(label: "com.dekun.RemoteMonitorControl.homekit.log")
+    private static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return f
+    }()
+
+    static func log(_ message: String) {
+        let date = Date()
+        queue.async {
+            let line = "\(formatter.string(from: date)) \(message)\n"
+            let url = HomeKitStore.logURL
+            let fm = FileManager.default
+            if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int, size > 1_000_000 {
+                try? fm.removeItem(at: url)
+            }
+            if !fm.fileExists(atPath: url.path) {
+                try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                fm.createFile(atPath: url.path, contents: nil)
+            }
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile()
+                handle.write(Data(line.utf8))
+                try? handle.close()
+            }
+        }
+    }
+
+    /// "state=3 error=2" for a pairing TLV, for the log.
+    static func describe(_ tlv: Data) -> String {
+        let t = TLV8.decode(tlv)
+        var parts: [String] = []
+        if let v = t.byte(.state) { parts.append("state=\(v)") }
+        if let v = t.byte(.method) { parts.append("method=\(v)") }
+        if let v = t.byte(.error) { parts.append("error=\(v)") }
+        if let v = t[.flags] { parts.append("flags=\(v.map { String(format: "%02x", $0) }.joined())") }
+        return parts.joined(separator: " ")
+    }
+}

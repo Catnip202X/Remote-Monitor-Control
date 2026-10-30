@@ -84,6 +84,10 @@ public struct HomeKitIdentity: Codable, Equatable, Sendable {
 
 public enum HomeKitStore {
     public static var url: URL { ConfigStore.directory.appendingPathComponent("homekit.json") }
+    /// What the HomeKit server did, for troubleshooting (`monitorctl homekit log`).
+    public static var logURL: URL { ConfigStore.directory.appendingPathComponent("homekit.log") }
+    /// Posted (across processes) by `monitorctl homekit reset`; the app then resets its pairing.
+    public static let resetNotification = Notification.Name("com.dekun.RemoteMonitorControl.homeKitReset")
 
     /// Loads the identity, creating one on first use.
     public static func load() -> HomeKitIdentity {

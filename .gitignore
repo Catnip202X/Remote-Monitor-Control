@@ -12,3 +12,6 @@ Shortcuts/
 
 # macOS
 .DS_Store
+
+# HomeKit troubleshooting output
+homekit-debug.log

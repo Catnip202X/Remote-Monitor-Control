@@ -100,6 +100,7 @@ final class HAPServer {
                 guard let self else { return }
                 switch state {
                 case .ready:
+                    HAPLog.log("listening on port \(self.listener?.port?.rawValue ?? 0) as \"\(self.accessory.displayName)\" id \(self.identity.deviceID) c#=\(self.identity.configNumber) paired=\(self.identity.isPaired) pairings=\(self.identity.pairings.count)")
                     self.status.running = true
                     self.updateStatus(message: self.identity.isPaired ? "Paired with Home" : "Ready to add in the Home app")
                 case .failed(let error):
@@ -114,6 +115,7 @@ final class HAPServer {
             listener.newConnectionHandler = { [weak self] connection in
                 guard let self else { return }
                 let c = HAPConnection(connection: connection, server: self)
+                HAPLog.log("connection from \(c.peer)")
                 self.connections[ObjectIdentifier(c)] = c
                 c.start()
             }
@@ -141,6 +143,7 @@ final class HAPServer {
     }
 
     func connectionClosed(_ c: HAPConnection) {
+        HAPLog.log("connection closed \(c.peer)\(c.closeReason.map { ": " + $0 } ?? "")")
         connections.removeValue(forKey: ObjectIdentifier(c))
         if setupSession?.owner == ObjectIdentifier(c) { setupSession = nil }
         updateStatus(message: status.message)
@@ -165,6 +168,7 @@ final class HAPServer {
     }
 
     private func republish() {
+        HAPLog.log("bonjour: sf=\(identity.isPaired ? 0 : 1) c#=\(identity.configNumber)")
         listener?.service = bonjourService()
     }
 
@@ -228,6 +232,26 @@ final class HAPServer {
     // MARK: - Request routing
 
     func handle(_ request: HTTPRequest, on c: HAPConnection) -> HTTPResponse {
+        let isPairing = request.path.hasPrefix("/pair")
+        var line = "→ \(request.method) \(request.path) [\(c.peer)\(c.isEncrypted ? ", encrypted" : "")]"
+        if isPairing {
+            line += " " + HAPLog.describe(request.body)
+        } else if !request.body.isEmpty {
+            line += " " + String(decoding: request.body, as: UTF8.self)
+        }
+        HAPLog.log(line)
+        let response = route(request, on: c)
+        var out = "← \(response.status)"
+        if response.contentType == "application/pairing+tlv8" {
+            out += " " + HAPLog.describe(response.body)
+        } else if !response.body.isEmpty {
+            out += " " + String(decoding: response.body.prefix(6000), as: UTF8.self)
+        }
+        HAPLog.log(out)
+        return response
+    }
+
+    private func route(_ request: HTTPRequest, on c: HAPConnection) -> HTTPResponse {
         let path = request.path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? request.path
         switch (request.method, path) {
         case ("POST", "/pair-setup"):
@@ -284,6 +308,7 @@ final class HAPServer {
                 return TLV8.errorResponse(state: 4, .authentication)
             }
             guard let serverProof = session.srp.verify(clientPublicKey: clientKey, clientProof: proof) else {
+                HAPLog.log("pair-setup: client proof did not match (wrong setup code?) A=\(clientKey.count) bytes")
                 failedSetupAttempts += 1
                 setupSession = nil
                 updateStatus(message: "Wrong setup code entered in the Home app")
@@ -298,6 +323,7 @@ final class HAPServer {
             }
             let key = HAPCrypto.hkdf(K, salt: "Pair-Setup-Encrypt-Salt", info: "Pair-Setup-Encrypt-Info")
             guard let plain = try? HAPCrypto.open(encrypted, key: key, nonce: HAPCrypto.nonce("PS-Msg05")) else {
+                HAPLog.log("pair-setup M5: could not decrypt")
                 return TLV8.errorResponse(state: 6, .authentication)
             }
             let sub = TLV8.decode(plain)
@@ -310,6 +336,7 @@ final class HAPServer {
                                              info: "Pair-Setup-Controller-Sign-Info")
             let controllerInfo = controllerX.withUnsafeBytes { Data($0) } + controllerID + controllerLTPK
             guard controllerKey.isValidSignature(signature, for: controllerInfo) else {
+                HAPLog.log("pair-setup M5: controller signature invalid")
                 return TLV8.errorResponse(state: 6, .authentication)
             }
 
@@ -337,6 +364,7 @@ final class HAPServer {
             }
             setupSession = nil
             failedSetupAttempts = 0
+            HAPLog.log("pair-setup: paired with controller \(id)")
             republish()
             updateStatus(message: "Paired with Home")
             return TLV8([(.state, Data([6])), (.encryptedData, encryptedResponse)]).encode()
@@ -388,10 +416,12 @@ final class HAPServer {
             guard let pairing = identity.pairings.first(where: { $0.id == controllerID }),
                   let key = try? Curve25519.Signing.PublicKey(rawRepresentation: pairing.publicKey),
                   key.isValidSignature(signature, for: session.controllerPK + controllerIDData + session.accessoryPK) else {
+                HAPLog.log("pair-verify M3: unknown controller or bad signature (\(controllerID))")
                 c.verifySession = nil
                 return TLV8.errorResponse(state: 4, .authentication)
             }
             c.controllerID = controllerID
+            HAPLog.log("pair-verify: session with \(controllerID)")
             // Encryption starts with the next message, after this response goes out in the clear.
             c.pendingKeys = (
                 read: HAPCrypto.hkdf(session.shared, salt: "Control-Salt", info: "Control-Write-Encryption-Key"),
@@ -419,6 +449,7 @@ final class HAPServer {
             }
             let id = String(decoding: idData, as: UTF8.self)
             let admin = (tlv.byte(.permissions) ?? 0) & 1 == 1
+            HAPLog.log("pairings: add \(id) admin=\(admin)")
             if let index = identity.pairings.firstIndex(where: { $0.id == id }) {
                 guard identity.pairings[index].publicKey == publicKey else {
                     return TLV8.errorResponse(state: 2, .unknown)
@@ -433,6 +464,7 @@ final class HAPServer {
         case 4: // remove
             guard let idData = tlv[.identifier] else { return TLV8.errorResponse(state: 2, .unknown) }
             let id = String(decoding: idData, as: UTF8.self)
+            HAPLog.log("pairings: remove \(id)")
             saveIdentity { $0.pairings.removeAll { $0.id == id } }
             var toClose = connections.values.filter { $0.controllerID == id }
             if !identity.isPaired {
@@ -645,8 +677,10 @@ final class HAPConnection {
     var pendingKeys: (read: SymmetricKey, write: SymmetricKey)?
     var controllerID: String?
     var subscriptions = Set<CharacteristicID>()
+    var closeReason: String?
 
     var isEncrypted: Bool { readKey != nil }
+    var peer: String { "\(connection.endpoint)" }
 
     init(connection: NWConnection, server: HAPServer) {
         self.connection = connection
@@ -656,7 +690,10 @@ final class HAPConnection {
     func start() {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled: self?.close()
+            case .failed(let error):
+                self?.closeReason = "failed: \(error)"
+                self?.close()
+            case .cancelled: self?.close()
             default: break
             }
         }
@@ -676,6 +713,9 @@ final class HAPConnection {
             guard let self, !self.closed else { return }
             if let data, !data.isEmpty { self.process(data) }
             if isComplete || error != nil {
+                if self.closeReason == nil {
+                    self.closeReason = error.map { "receive error: \($0)" } ?? "closed by controller"
+                }
                 self.close()
             } else if !self.closed {
                 self.receive()
@@ -694,6 +734,7 @@ final class HAPConnection {
                 let sealed = encryptedInbound.dropFirst(2).prefix(length + 16)
                 guard let plain = try? HAPCrypto.open(Data(sealed), key: readKey,
                                                       nonce: HAPCrypto.nonce(readCounter), aad: Data(aad)) else {
+                    closeReason = "could not decrypt frame \(readCounter)"
                     close()
                     return
                 }
