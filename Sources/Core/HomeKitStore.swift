@@ -36,6 +36,8 @@ public struct HomeKitIdentity: Codable, Equatable, Sendable {
     public var inputNames: [String: String] = [:]
     /// TV name the user changed in the Home app.
     public var tvName: String?
+    /// The inputs last read from the monitor, used when it can't be asked (e.g. while off).
+    public var knownInputs: [UInt16] = []
 
     public var isPaired: Bool { pairings.contains { $0.isAdmin } }
 

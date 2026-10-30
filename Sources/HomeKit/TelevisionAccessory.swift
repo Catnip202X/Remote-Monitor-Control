@@ -84,6 +84,13 @@ final class TelevisionAccessory {
             brand = profile.brand
             codes = profile.capabilities?.inputs.map { $0 & 0xFF } ?? []
         }
+        // Keep the input list stable when the monitor can't be asked, so Home doesn't rebuild it.
+        if codes.isEmpty {
+            codes = server.identity.knownInputs
+        } else if codes != server.identity.knownInputs {
+            let known = codes
+            server.saveIdentity { $0.knownInputs = known }
+        }
         let config = ConfigStore.load()
         codes.append(config.inputA & 0xFF)
         codes.append(config.inputB & 0xFF)

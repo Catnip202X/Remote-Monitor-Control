@@ -471,7 +471,9 @@ final class HAPServer {
             return CharacteristicID(aid: aid, iid: iid)
         }
         if ids.contains(where: { $0.iid >= TelevisionAccessory.IID.tvService && $0.aid == TelevisionAccessory.aid }) {
-            pushChanges(accessory.refreshFromMonitor(), except: nil)
+            // Events must not arrive between a request and its response: send them afterwards.
+            let changed = accessory.refreshFromMonitor()
+            if !changed.isEmpty { queue.async { self.pushChanges(changed, except: nil) } }
         }
         var items: [[String: Any]] = []
         var anyError = false
@@ -508,6 +510,7 @@ final class HAPServer {
         var results: [[String: Any]] = []
         var anyError = false
         var changed: [Int] = []
+        var written = Set<Int>()
         for item in list {
             guard let aid = (item["aid"] as? NSNumber)?.intValue, let iid = (item["iid"] as? NSNumber)?.intValue else {
                 continue
@@ -526,6 +529,7 @@ final class HAPServer {
                     }
                 }
                 if let value = item["value"] {
+                    written.insert(iid)
                     switch accessory.write(iid, value: value) {
                     case .success(let iids): changed += iids
                     case .failure(let error): status = error.rawValue
@@ -535,7 +539,11 @@ final class HAPServer {
             if status != 0 { anyError = true }
             results.append(["aid": aid, "iid": iid, "status": status])
         }
-        pushChanges(Array(Set(changed)), except: c)
+        // The writer already knows what it wrote, but not about side effects (e.g. a remote key
+        // changing the input).
+        let all = Array(Set(changed))
+        pushChanges(all.filter { written.contains($0) }, except: c)
+        pushChanges(all.filter { !written.contains($0) }, except: nil)
         if !changed.isEmpty {
             DispatchQueue.main.async { NotificationCenter.default.post(name: .homeKitChangedMonitor, object: nil) }
         }
@@ -576,7 +584,8 @@ struct HTTPRequest {
         var result: [String: String] = [:]
         for pair in q.split(separator: "&") {
             let kv = pair.split(separator: "=", maxSplits: 1)
-            let key = String(kv[0])
+            guard let first = kv.first else { continue }
+            let key = String(first)
             let value = kv.count > 1 ? (String(kv[1]).removingPercentEncoding ?? String(kv[1])) : ""
             result[key] = value
         }
@@ -724,7 +733,11 @@ final class HAPConnection {
             guard let colon = line.firstIndex(of: ":") else { continue }
             headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
-        let length = Int(headers["content-length"] ?? "0") ?? 0
+        let length = max(0, Int(headers["content-length"] ?? "0") ?? 0)
+        guard length <= 64 * 1024 else {
+            close()
+            return nil
+        }
         let bodyStart = headerEnd.upperBound
         guard plainInbound.distance(from: bodyStart, to: plainInbound.endIndex) >= length else { return nil }
         let bodyEnd = plainInbound.index(bodyStart, offsetBy: length)
