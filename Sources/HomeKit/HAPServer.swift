@@ -95,13 +95,14 @@ final class HAPServer {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             let listener = try NWListener(using: params)
-            listener.service = bonjourService()
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
                 case .ready:
                     HAPLog.log("listening on port \(self.listener?.port?.rawValue ?? 0) as \"\(self.accessory.displayName)\" id \(self.identity.deviceID) c#=\(self.identity.configNumber) paired=\(self.identity.isPaired) pairings=\(self.identity.pairings.count)")
                     self.status.running = true
+                    self.port = self.listener?.port?.rawValue ?? 0
+                    self.advertise()
                     self.updateStatus(message: self.identity.isPaired ? "Paired with Home" : "Ready to add in the Home app")
                 case .failed(let error):
                     self.status.running = false
@@ -130,6 +131,7 @@ final class HAPServer {
     }
 
     private func _stop(message: String) {
+        stopAdvertising()
         pollTimer?.cancel()
         pollTimer = nil
         listener?.cancel()
@@ -151,7 +153,14 @@ final class HAPServer {
 
     // MARK: - Bonjour
 
-    private func bonjourService() -> NWListener.Service {
+    // NWListener can't change its TXT record while running, and HomeKit needs "sf" to flip
+    // from 1 to 0 right after pairing (iOS waits for it). NetService can update it live.
+    // NetService is used on the main thread, which has a run loop.
+
+    private var port: UInt16 = 0
+    private var bonjour: NetService?   // main thread only
+
+    private func txtRecord() -> Data {
         let txt: [String: String] = [
             "c#": String(identity.configNumber),
             "ff": "0",
@@ -163,13 +172,38 @@ final class HAPServer {
             "ci": String(TelevisionAccessory.category),
             "sh": identity.setupHash,
         ]
-        return NWListener.Service(name: accessory.displayName, type: "_hap._tcp", domain: nil,
-                                  txtRecord: NWTXTRecord(txt))
+        return NetService.data(fromTXTRecord: txt.mapValues { Data($0.utf8) })
+    }
+
+    private func advertise() {
+        let name = accessory.displayName
+        let port = Int32(self.port)
+        let txt = txtRecord()
+        HAPLog.log("bonjour: publishing \"\(name)\" port \(port) sf=\(identity.isPaired ? 0 : 1) c#=\(identity.configNumber)")
+        DispatchQueue.main.async {
+            self.bonjour?.stop()
+            let service = NetService(domain: "local.", type: "_hap._tcp.", name: name, port: port)
+            service.setTXTRecord(txt)
+            service.publish()
+            self.bonjour = service
+        }
+    }
+
+    private func stopAdvertising() {
+        DispatchQueue.main.async {
+            self.bonjour?.stop()
+            self.bonjour = nil
+        }
     }
 
     private func republish() {
+        let txt = txtRecord()
         HAPLog.log("bonjour: sf=\(identity.isPaired ? 0 : 1) c#=\(identity.configNumber)")
-        listener?.service = bonjourService()
+        DispatchQueue.main.async {
+            if self.bonjour?.setTXTRecord(txt) == false {
+                HAPLog.log("bonjour: could not update the TXT record")
+            }
+        }
     }
 
     private func updateConfigNumberIfNeeded() {
