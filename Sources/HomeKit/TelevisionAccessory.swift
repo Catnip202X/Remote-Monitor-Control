@@ -144,7 +144,10 @@ final class TelevisionAccessory {
                 changed.append(IID.active)
             }
         }
-        var current = controller.currentInputs().first?.value
+        // Only ask the monitor for its input while it's on: a DDC request wakes many monitors
+        // (Samsung Odyssey, for one) out of standby into "searching for input". While it's off,
+        // show the input the app last switched to.
+        var current = active == 1 ? controller.currentInputs().first?.value : nil
         if current == nil, let id = controller.displays().first?.id {
             current = ConfigStore.lastKnownInput()[id]
         }
